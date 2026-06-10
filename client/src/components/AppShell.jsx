@@ -27,8 +27,10 @@ export default function AppShell() {
     { to: '/transactions', label: 'Transactions' },
     { to: '/budgets', label: 'Budgets' },
     { to: '/investments', label: 'Investments' },
+    { to: '/portfolio', label: 'Portfolio' },
     { to: '/goals', label: 'Goals' },
     { to: '/bills', label: 'Bills' },
+    { to: '/calculators', label: 'Calculators' },
     { to: '/chat', label: 'AI Advisor' },
     { to: '/settings', label: 'Settings' },
   ];

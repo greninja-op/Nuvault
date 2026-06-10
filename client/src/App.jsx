@@ -12,8 +12,10 @@ import Liabilities from './pages/Liabilities';
 import Transactions from './pages/Transactions';
 import Budgets from './pages/Budgets';
 import Investments from './pages/Investments';
+import Portfolio from './pages/Portfolio';
 import Goals from './pages/Goals';
 import Bills from './pages/Bills';
+import Calculators from './pages/Calculators';
 import AiChat from './pages/AiChat';
 import Settings from './pages/Settings';
 import NotFound from './pages/NotFound';
@@ -44,8 +46,10 @@ export default function App() {
               <Route path="transactions" element={<Transactions />} />
               <Route path="budgets" element={<Budgets />} />
               <Route path="investments" element={<Investments />} />
+              <Route path="portfolio" element={<Portfolio />} />
               <Route path="goals" element={<Goals />} />
               <Route path="bills" element={<Bills />} />
+              <Route path="calculators" element={<Calculators />} />
               <Route path="chat" element={<AiChat />} />
               <Route path="settings" element={<Settings />} />
             </Route>

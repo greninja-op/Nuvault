@@ -30,6 +30,7 @@ const protect = require('../middleware/auth');
 const { publicAuthRouter, protectedAuthRouter } = require('./auth');
 const liabilitiesRouter = require('./liabilities');
 const investmentsRouter = require('./investments');
+const portfolioRouter = require('./portfolio');
 const netWorthRouter = require('./netWorth');
 const goalsRouter = require('./goals');
 const billsRouter = require('./bills');
@@ -64,6 +65,11 @@ protectedRouter.use('/transactions', transactionsRouter);
 
 // Investment surface (Task 14.1) — fully protected (R13).
 protectedRouter.use('/investments', investmentsRouter);
+
+// Portfolio surface — fully protected. A single unified PortfolioItem
+// resource with a `kind` discriminator; `/summary` is computed on the fly
+// and never persisted.
+protectedRouter.use('/portfolio', portfolioRouter);
 
 // Budget surface (Task 12.1) — fully protected (R11). The basic CRUD
 // surface is implemented here; spending computation and month/year

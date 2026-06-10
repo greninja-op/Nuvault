@@ -26,6 +26,8 @@
  * app against any config object without booting the real environment.
  */
 
+const fs = require('fs');
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -33,6 +35,18 @@ const rateLimit = require('express-rate-limit');
 
 const errorHandler = require('./middleware/errorHandler');
 const { publicRouter, protectedRouter } = require('./routes');
+
+/**
+ * Absolute path to the built React client (`client/dist`). When this
+ * directory exists (i.e. the client has been built with `npm run build`),
+ * the API server also serves the SPA so the whole app runs from a single
+ * process on a single port — no separate dev server needed, and a hard
+ * refresh on any client route works because unmatched non-`/api` GET
+ * requests fall back to `index.html`.
+ *
+ * @type {string}
+ */
+const CLIENT_DIST = path.resolve(__dirname, '..', 'client', 'dist');
 
 /**
  * Window in milliseconds over which the rate limiter counts requests.
@@ -60,9 +74,18 @@ const RATE_LIMIT_MAX_REQUESTS = 100;
  * @returns {import('express').RequestHandler}
  */
 function buildCorsMiddleware(clientOrigin) {
+  // Support a comma-separated list so the API accepts requests both from
+  // the single-port production server (e.g. http://localhost:5001) and
+  // from the Vite dev server (http://localhost:5173) without reconfig.
+  const allowed = new Set(
+    String(clientOrigin)
+      .split(',')
+      .map((o) => o.trim())
+      .filter(Boolean)
+  );
   return cors({
     origin(origin, callback) {
-      if (!origin || origin === clientOrigin) {
+      if (!origin || allowed.has(origin)) {
         return callback(null, true);
       }
       const err = new Error('Origin not allowed by CORS policy');
@@ -90,6 +113,10 @@ function buildRateLimitMiddleware() {
     standardHeaders: true,
     legacyHeaders: false,
     message: { message: 'Too many requests; please try again later.' },
+    // Only rate-limit the API. Static SPA assets (JS/CSS chunks, images)
+    // can load dozens of files on a single page view, which would
+    // otherwise blow the 100-req budget on a hard refresh.
+    skip: (req) => !req.originalUrl.startsWith('/api'),
   });
 }
 
@@ -139,6 +166,21 @@ function createApp({ config } = {}) {
   // `protectedRouter.use(...)` without editing this file.
   app.use('/api', publicRouter);
   app.use('/api', protectedRouter);
+
+  // 5b. Serve the built React client (single-process / single-port mode).
+  // Only active when `client/dist` has been built. Static assets are
+  // served directly; any other non-`/api` GET falls back to index.html
+  // so client-side routes (e.g. /portfolio, /calculators) survive a hard
+  // browser refresh instead of 404-ing.
+  if (fs.existsSync(path.join(CLIENT_DIST, 'index.html'))) {
+    app.use(express.static(CLIENT_DIST));
+    // Regex matches any path that does NOT start with `/api`. Unknown
+    // `/api/*` routes are left to fall through to the error handler /
+    // default 404 so the API contract is unchanged.
+    app.get(/^(?!\/api(?:\/|$)).*/, (_req, res) => {
+      res.sendFile(path.join(CLIENT_DIST, 'index.html'));
+    });
+  }
 
   // 6. Terminal error handler — must remain the last middleware so
   // every thrown / next(err) error funnels through it (R20).
