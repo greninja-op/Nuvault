@@ -35,6 +35,7 @@ const goalsRouter = require('./goals');
 const billsRouter = require('./bills');
 const budgetsRouter = require('./budgets');
 const transactionsRouter = require('./transactions');
+const aiRouter = require('./ai');
 /** @type {import('express').Router} */
 const publicRouter = express.Router();
 
@@ -80,6 +81,12 @@ protectedRouter.use('/goals', goalsRouter);
 // Bill surface (Task 16.1) — fully protected (R16). The `/pay` route is
 // registered as a 501 placeholder; task 16.2 swaps the handler body.
 protectedRouter.use('/bills', billsRouter);
+
+// AI advisor surface (Task 17.1) — fully protected (R18). The chat
+// endpoint assembles a per-user snapshot and forwards it to Claude;
+// the conversation is never persisted (R18.7) and Claude failures
+// surface as a uniform 503 without exposing the API key (R18.6).
+protectedRouter.use('/ai', aiRouter);
 
 module.exports = {
   publicRouter,

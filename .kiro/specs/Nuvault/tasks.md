@@ -195,7 +195,7 @@ The stack is fixed by the design: Node.js + Express, MongoDB via Mongoose, JWT a
     - Assert the list defaults to the current month/year by server clock, and that spending is never persisted
     - _Requirements: 12.1, 12.6_
 
-- [ ] 13. Checkpoint - core financial domains
+- [~] 13. Checkpoint - core financial domains
   - Ensure all tests pass, ask the user if questions arise.
 
 - [x] 14. Implement investment management
@@ -241,8 +241,8 @@ The stack is fixed by the design: Node.js + Express, MongoDB via Mongoose, JWT a
     - **Property 24: Bill payment advances or settles according to frequency**
     - **Validates: Requirements 17.1, 17.2, 17.3**
 
-- [ ] 17. Implement the AI financial advisor
-  - [ ] 17.1 Implement the AI chat controller and route
+- [x] 17. Implement the AI financial advisor
+  - [x] 17.1 Implement the AI chat controller and route
     - Validate the message (1–4000 chars, non-whitespace); assemble a user-scoped snapshot (assets, liabilities, 50 most recent transactions desc, goals, bills, computed net worth); send snapshot as system context + message to Claude (≤ 30s); return `{ reply }`; on failure/timeout route a generic error through the error handler without exposing the API key; never persist the conversation
     - _Requirements: 18.1, 18.2, 18.3, 18.4, 18.5, 18.6, 18.7_
 
@@ -291,15 +291,15 @@ The stack is fixed by the design: Node.js + Express, MongoDB via Mongoose, JWT a
     - Register → use token → access a protected route → retrieve profile (representative cases)
     - _Requirements: 1.1, 2.1, 3.1, 4.2_
 
-- [ ] 19. Checkpoint - backend complete
+- [x] 19. Checkpoint - backend complete
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 20. Implement the React client
-  - [ ] 20.1 Scaffold the client and session handling
+  - [-] 20.1 Scaffold the client and session handling
     - Create the React (Vite + Tailwind) app with `AuthContext` (user/token/login/logout), an Axios instance whose request interceptor attaches the Bearer token and whose response interceptor handles `401` (clear token, redirect to login within 2s, "session expired"), and a protected-route wrapper that redirects to login within 2s when no token exists; store only the JWT under a single local-storage key
     - _Requirements: 21.1, 21.2, 21.3, 21.4, 21.5, 21.6_
 
-  - [ ] 20.2 Implement feature views wired to the API
+  - [~] 20.2 Implement feature views wired to the API
     - Build the auth, dashboard/net worth, assets, liabilities, transactions, budgets, investments, goals, bills, AI chat, and currency-selection views, each calling the corresponding API endpoints and rendering computed values; persist the selected display currency and apply it thereafter
     - _Requirements: 19.4_
 
@@ -319,7 +319,7 @@ The stack is fixed by the design: Node.js + Express, MongoDB via Mongoose, JWT a
     - Logout clears the token and redirects; no-token access redirects without issuing the request; display-currency selection persists and applies thereafter
     - _Requirements: 21.4, 21.6, 19.4_
 
-- [ ] 21. Final checkpoint
+- [~] 21. Final checkpoint
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
