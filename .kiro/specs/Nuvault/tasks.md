@@ -294,12 +294,12 @@ The stack is fixed by the design: Node.js + Express, MongoDB via Mongoose, JWT a
 - [x] 19. Checkpoint - backend complete
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 20. Implement the React client
-  - [-] 20.1 Scaffold the client and session handling
+- [x] 20. Implement the React client
+  - [x] 20.1 Scaffold the client and session handling
     - Create the React (Vite + Tailwind) app with `AuthContext` (user/token/login/logout), an Axios instance whose request interceptor attaches the Bearer token and whose response interceptor handles `401` (clear token, redirect to login within 2s, "session expired"), and a protected-route wrapper that redirects to login within 2s when no token exists; store only the JWT under a single local-storage key
     - _Requirements: 21.1, 21.2, 21.3, 21.4, 21.5, 21.6_
 
-  - [~] 20.2 Implement feature views wired to the API
+  - [x] 20.2 Implement feature views wired to the API
     - Build the auth, dashboard/net worth, assets, liabilities, transactions, budgets, investments, goals, bills, AI chat, and currency-selection views, each calling the corresponding API endpoints and rendering computed values; persist the selected display currency and apply it thereafter
     - _Requirements: 19.4_
 
@@ -319,7 +319,7 @@ The stack is fixed by the design: Node.js + Express, MongoDB via Mongoose, JWT a
     - Logout clears the token and redirects; no-token access redirects without issuing the request; display-currency selection persists and applies thereafter
     - _Requirements: 21.4, 21.6, 19.4_
 
-- [~] 21. Final checkpoint
+- [x] 21. Final checkpoint
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
