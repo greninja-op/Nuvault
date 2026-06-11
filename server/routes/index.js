@@ -28,6 +28,7 @@ const express = require('express');
 
 const protect = require('../middleware/auth');
 const { publicAuthRouter, protectedAuthRouter } = require('./auth');
+const assetsRouter = require('./assets');
 const liabilitiesRouter = require('./liabilities');
 const investmentsRouter = require('./investments');
 const portfolioRouter = require('./portfolio');
@@ -55,6 +56,10 @@ protectedRouter.use(protect);
 //   - Protected: GET  /api/auth/me                              (R3.1)
 publicRouter.use('/auth', publicAuthRouter);
 protectedRouter.use('/auth', protectedAuthRouter);
+
+// Asset surface (Task 8.1) — fully protected (R6). Asset CRUD lives on
+// `/api/assets`, separate from the computed `/api/networth` surface.
+protectedRouter.use('/assets', assetsRouter);
 
 // Liability surface (Task 9.1) — fully protected (R7).
 protectedRouter.use('/liabilities', liabilitiesRouter);

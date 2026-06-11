@@ -3,11 +3,10 @@
 /**
  * Asset routes (Task 8.1).
  *
- * Mounts the Asset CRUD endpoints under the shared `protectedRouter` so
- * they automatically inherit the `protect` middleware applied by Task
- * 5.3. Importing this module is the only side effect needed to wire
- * the routes — `app.js` already mounts `protectedRouter` at `/api`, so
- * the resulting full paths are:
+ * Exports the Asset CRUD sub-router. The aggregator in `routes/index.js`
+ * mounts it on `protectedRouter` under `/assets`, so it automatically
+ * inherits the `protect` middleware applied by Task 5.3. The resulting
+ * full paths are:
  *
  *   GET    /api/assets       → getAssets
  *   POST   /api/assets       → createAsset      (assetValidators)
@@ -25,7 +24,6 @@
 
 const express = require('express');
 
-const { protectedRouter } = require('./index');
 const {
   createAsset,
   getAssets,
@@ -48,10 +46,6 @@ assetsRouter
   .get(getAsset)
   .put(assetValidators, updateAsset)
   .delete(deleteAsset);
-
-// Mount under the protected aggregator so authentication is enforced
-// uniformly via the `protect` middleware wired by Task 5.3 (R4.1).
-protectedRouter.use('/assets', assetsRouter);
 
 module.exports = assetsRouter;
 module.exports.assetsRouter = assetsRouter;
