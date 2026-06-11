@@ -61,8 +61,10 @@ describe('Transactions', () => {
       );
     });
 
-    expect(await screen.findByText('Weekly shop')).toBeInTheDocument();
-    // "groceries" appears in both the summary card and the row.
+    // Rendered in both the desktop table and the mobile card list, so it
+    // appears more than once in the DOM (CSS hides one per breakpoint).
+    expect((await screen.findAllByText('Weekly shop')).length).toBeGreaterThan(0);
+    // "groceries" appears in the summary card and both row variants.
     expect(screen.getAllByText('groceries').length).toBeGreaterThan(0);
   });
 });

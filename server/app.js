@@ -32,6 +32,8 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const mongoSanitize = require('express-mongo-sanitize');
+const hpp = require('hpp');
 
 const errorHandler = require('./middleware/errorHandler');
 const { publicRouter, protectedRouter } = require('./routes');
@@ -49,19 +51,34 @@ const { publicRouter, protectedRouter } = require('./routes');
 const CLIENT_DIST = path.resolve(__dirname, '..', 'client', 'dist');
 
 /**
- * Window in milliseconds over which the rate limiter counts requests.
+ * Rate-limit window: 15 minutes (in milliseconds). Applies to both the
+ * general and the auth limiters.
  *
  * @type {number}
  */
-const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 
 /**
- * Maximum number of requests allowed per client identifier within the
- * rate-limit window before the limiter returns `429` (R22.5).
+ * Max general API requests per window per IP before `429` (R22.5).
  *
  * @type {number}
  */
-const RATE_LIMIT_MAX_REQUESTS = 100;
+const GENERAL_RATE_LIMIT_MAX = 100;
+
+/**
+ * Max auth requests (login/register) per window per IP. Much stricter than
+ * the general limit to blunt credential-stuffing / brute-force attempts.
+ *
+ * @type {number}
+ */
+const AUTH_RATE_LIMIT_MAX = 10;
+
+/**
+ * Exact paths the stricter auth limiter guards.
+ *
+ * @type {string[]}
+ */
+const AUTH_PATHS = ['/api/auth/login', '/api/auth/register'];
 
 /**
  * Build the CORS middleware. Only requests whose `Origin` header matches
@@ -99,24 +116,108 @@ function buildCorsMiddleware(clientOrigin) {
 }
 
 /**
- * Build the rate-limiting middleware. Uses the default key generator
- * (the request's resolved IP) as the per-client identifier and replies
- * with `429` plus a uniform JSON body once a client exceeds the budget
- * (R22.5).
+ * Build the Helmet security-header middleware with a Content-Security-Policy
+ * tuned for serving the built React SPA from this same Express origin.
  *
+ * CSP notes:
+ *   - `default-src 'self'` covers the same-origin SPA (production serves
+ *     `client/dist` from this server; dev serves it from Vite).
+ *   - `script-src 'self'` — the Vite production build emits external,
+ *     hashed module scripts (no inline scripts), so no `'unsafe-inline'`
+ *     is needed for scripts.
+ *   - `style-src` allows `'unsafe-inline'` because Tailwind utilities and
+ *     charting libs (Recharts) set inline `style=""` attributes.
+ *   - `connect-src` is `'self'` plus every configured client origin so
+ *     XHR/fetch works whether the SPA is same-origin or served from a
+ *     separate host. Add your deployed origin (e.g. the Vercel URL) to
+ *     `CLIENT_ORIGIN` and it flows in here automatically.
+ *   - `upgrade-insecure-requests` is DISABLED (set to null). Helmet turns
+ *     it on by default, which would force asset requests to https and
+ *     break the app over plain `http://localhost`.
+ *
+ * @param {{ clientOrigin: string }} config
  * @returns {import('express').RequestHandler}
  */
-function buildRateLimitMiddleware() {
+function buildHelmetMiddleware(config) {
+  const configuredOrigins = String(config.clientOrigin)
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+
+  // 'self' + configured origins + the conventional CRA dev origin the
+  // hardening spec calls out. De-duplicated.
+  const connectSrc = Array.from(
+    new Set(["'self'", 'http://localhost:3000', ...configuredOrigins])
+  );
+
+  return helmet({
+    contentSecurityPolicy: {
+      useDefaults: true,
+      directives: {
+        defaultSrc: ["'self'"],
+        baseUri: ["'self'"],
+        scriptSrc: ["'self'"],
+        scriptSrcAttr: ["'none'"],
+        styleSrc: ["'self'", 'https:', "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:', 'blob:'],
+        fontSrc: ["'self'", 'https:', 'data:'],
+        connectSrc,
+        objectSrc: ["'none'"],
+        frameAncestors: ["'self'"],
+        // Disable the default upgrade-insecure-requests so local http works.
+        upgradeInsecureRequests: null,
+      },
+    },
+    // Allow cross-origin loading of static assets if ever served from a
+    // CDN/other host; harmless for same-origin serving.
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  });
+}
+
+/**
+ * General rate limiter: 100 requests / 15 min per IP across the API.
+ *
+ * Skips:
+ *   - non-`/api` requests (static SPA assets — a single page view loads
+ *     many files and would otherwise exhaust the budget),
+ *   - the auth login/register paths (those get the stricter auth limiter),
+ *   - the test environment (so the Jest suite isn't throttled).
+ *
+ * @param {{ nodeEnv?: string }} config
+ * @returns {import('express').RequestHandler}
+ */
+function buildGeneralRateLimiter(config) {
   return rateLimit({
     windowMs: RATE_LIMIT_WINDOW_MS,
-    max: RATE_LIMIT_MAX_REQUESTS,
+    max: GENERAL_RATE_LIMIT_MAX,
     standardHeaders: true,
     legacyHeaders: false,
     message: { message: 'Too many requests; please try again later.' },
-    // Only rate-limit the API. Static SPA assets (JS/CSS chunks, images)
-    // can load dozens of files on a single page view, which would
-    // otherwise blow the 100-req budget on a hard refresh.
-    skip: (req) => !req.originalUrl.startsWith('/api'),
+    skip: (req) =>
+      config.nodeEnv === 'test' ||
+      !req.originalUrl.startsWith('/api') ||
+      AUTH_PATHS.some((p) => req.originalUrl.startsWith(p)),
+  });
+}
+
+/**
+ * Auth rate limiter: 10 requests / 15 min per IP, applied only to the
+ * login and register endpoints. Returns a clean JSON error on `429`.
+ * Skipped in the test environment.
+ *
+ * @param {{ nodeEnv?: string }} config
+ * @returns {import('express').RequestHandler}
+ */
+function buildAuthRateLimiter(config) {
+  return rateLimit({
+    windowMs: RATE_LIMIT_WINDOW_MS,
+    max: AUTH_RATE_LIMIT_MAX,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+      message: 'Too many authentication attempts; please try again later.',
+    },
+    skip: () => config.nodeEnv === 'test',
   });
 }
 
@@ -149,17 +250,30 @@ function createApp({ config } = {}) {
   // 1. CORS — admit only the configured client origin (R22.3).
   app.use(buildCorsMiddleware(config.clientOrigin));
 
-  // 2. Helmet — security headers (R22.4). The default Helmet bundle
-  // includes X-Content-Type-Options (`noSniff`), X-Frame-Options
-  // (`frameguard`), and Strict-Transport-Security (`hsts`), which are
-  // the three explicitly required by the design.
-  app.use(helmet());
+  // 2. Helmet — security headers (R22.4) with a Content-Security-Policy
+  // tuned for serving the React SPA from this origin. Keeps Helmet's
+  // defaults (noSniff, frameguard/X-Frame-Options, HSTS) and adds a CSP
+  // whose connect-src is driven by the configured client origins.
+  app.use(buildHelmetMiddleware(config));
 
-  // 3. Rate limiter — 100 requests / 60s per client identifier (R22.5).
-  app.use(buildRateLimitMiddleware());
+  // 3. Rate limiting (R22.5). The stricter auth limiter (10/15min) guards
+  // login + register; the general limiter (100/15min) covers the rest of
+  // the API. Both are no-ops in the test environment.
+  app.use(AUTH_PATHS, buildAuthRateLimiter(config));
+  app.use(buildGeneralRateLimiter(config));
 
   // 4. JSON body parsing.
   app.use(express.json());
+
+  // 4b. NoSQL-injection hardening: strip Mongo operator characters
+  // (`$`, `.`) from request keys in body/query/params before they reach
+  // any controller or query.
+  app.use(mongoSanitize());
+
+  // 4c. HTTP Parameter Pollution guard: collapse duplicated query/body
+  // params to a single value so `?x=a&x=b` can't smuggle arrays into
+  // handlers expecting scalars.
+  app.use(hpp());
 
   // 5. Pre-mount the aggregator routers at /api so domain routers in
   // later tasks attach by calling `publicRouter.use(...)` /
@@ -193,5 +307,7 @@ module.exports = {
   createApp,
   // Exported for tests and future tuning; not part of the public surface.
   RATE_LIMIT_WINDOW_MS,
-  RATE_LIMIT_MAX_REQUESTS,
+  GENERAL_RATE_LIMIT_MAX,
+  AUTH_RATE_LIMIT_MAX,
+  AUTH_PATHS,
 };

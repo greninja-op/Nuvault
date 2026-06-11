@@ -154,13 +154,13 @@ export default function Transactions() {
     <section className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Transactions</h1>
+          <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Transactions</h1>
           <p className="text-sm text-slate-600">Track income and expenses.</p>
         </div>
         <button
           type="button"
           onClick={openCreate}
-          className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-700"
+          className="flex min-h-[44px] w-full items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 sm:w-auto"
         >
           New transaction
         </button>
@@ -204,7 +204,7 @@ export default function Transactions() {
         </p>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <SummaryColumn
           title="Income by category"
           rows={summary.income}
@@ -224,61 +224,108 @@ export default function Transactions() {
       ) : items.length === 0 ? (
         <p className="text-sm text-slate-500">No transactions in this period.</p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
-          <table className="min-w-full divide-y divide-slate-200 text-sm">
-            <thead className="bg-slate-50">
-              <tr>
-                <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-500">Date</th>
-                <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-500">Type</th>
-                <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-500">Category</th>
-                <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-500">Description</th>
-                <th className="px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-slate-500">Amount</th>
-                <th className="px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-slate-500">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 bg-white">
-              {items.map((tx) => (
-                <tr key={tx._id}>
-                  <td className="px-4 py-2 text-slate-600">{formatDate(tx.date)}</td>
-                  <td className="px-4 py-2">
-                    <span
-                      className={
-                        tx.type === 'income'
-                          ? 'rounded bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700'
-                          : 'rounded bg-red-50 px-2 py-0.5 text-xs text-red-700'
-                      }
-                    >
-                      {tx.type}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2">{tx.category}</td>
-                  <td className="px-4 py-2 text-slate-600">{tx.description || '—'}</td>
-                  <td className="px-4 py-2 text-right">
-                    {formatCurrency(tx.amount, displayCurrency)}
-                  </td>
-                  <td className="px-4 py-2 text-right">
-                    <div className="flex justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => openEdit(tx)}
-                        className="text-xs font-medium text-indigo-600 hover:underline"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(tx)}
-                        className="text-xs font-medium text-red-600 hover:underline"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </td>
+        <>
+          {/* Desktop / tablet: table */}
+          <div className="hidden overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm md:block">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-500">Date</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-500">Type</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-500">Category</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-500">Description</th>
+                  <th className="px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-slate-500">Amount</th>
+                  <th className="px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-slate-500">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {items.map((tx) => (
+                  <tr key={tx._id}>
+                    <td className="px-4 py-2 text-slate-600">{formatDate(tx.date)}</td>
+                    <td className="px-4 py-2">
+                      <TypeBadge type={tx.type} />
+                    </td>
+                    <td className="px-4 py-2">{tx.category}</td>
+                    <td className="px-4 py-2 text-slate-600">{tx.description || '—'}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">
+                      {formatCurrency(tx.amount, displayCurrency)}
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openEdit(tx)}
+                          className="text-xs font-medium text-indigo-600 hover:underline"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(tx)}
+                          className="text-xs font-medium text-red-600 hover:underline"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile: card list */}
+          <ul className="space-y-3 md:hidden">
+            {items.map((tx) => (
+              <li
+                key={tx._id}
+                className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <TypeBadge type={tx.type} />
+                      <span className="truncate font-medium text-slate-900">
+                        {tx.category}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      {formatDate(tx.date)}
+                    </div>
+                    {tx.description && (
+                      <div className="mt-1 break-words text-sm text-slate-600">
+                        {tx.description}
+                      </div>
+                    )}
+                  </div>
+                  <div
+                    className={`shrink-0 text-right text-base font-semibold tabular-nums whitespace-nowrap ${
+                      tx.type === 'income' ? 'text-emerald-600' : 'text-slate-900'
+                    }`}
+                  >
+                    {formatCurrency(tx.amount, displayCurrency)}
+                  </div>
+                </div>
+                <div className="mt-3 flex gap-2 border-t border-slate-100 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => openEdit(tx)}
+                    className="flex min-h-[44px] flex-1 items-center justify-center rounded-md border border-slate-300 text-sm font-medium text-indigo-600 hover:bg-slate-50"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(tx)}
+                    className="flex min-h-[44px] flex-1 items-center justify-center rounded-md border border-slate-300 text-sm font-medium text-red-600 hover:bg-red-50"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
 
       <Modal
@@ -371,12 +418,26 @@ export default function Transactions() {
   );
 }
 
+function TypeBadge({ type }) {
+  return (
+    <span
+      className={
+        type === 'income'
+          ? 'rounded bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700'
+          : 'rounded bg-red-50 px-2 py-0.5 text-xs text-red-700'
+      }
+    >
+      {type}
+    </span>
+  );
+}
+
 function SummaryColumn({ title, rows, total, currency }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
-        <span className="text-sm font-medium text-slate-700">
+        <span className="text-sm font-medium text-slate-700 tabular-nums whitespace-nowrap">
           {formatCurrency(total, currency)}
         </span>
       </div>
@@ -385,9 +446,9 @@ function SummaryColumn({ title, rows, total, currency }) {
       ) : (
         <ul className="mt-3 divide-y divide-slate-100 text-sm">
           {rows.map((row) => (
-            <li key={row.category} className="flex items-center justify-between py-2">
-              <span className="text-slate-700">{row.category}</span>
-              <span className="text-slate-900">
+            <li key={row.category} className="flex items-center justify-between gap-3 py-2">
+              <span className="min-w-0 truncate text-slate-700">{row.category}</span>
+              <span className="shrink-0 text-slate-900 tabular-nums whitespace-nowrap">
                 {formatCurrency(row.total, currency)}
               </span>
             </li>

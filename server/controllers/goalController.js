@@ -143,6 +143,20 @@ const createGoalValidators = [
     .withMessage('targetAmount is required')
     .bail()
     .custom(buildPositiveAmountValidator('targetAmount')),
+
+  // --- targetDate (optional, but must be a valid future date if given) ---
+  body('targetDate')
+    .optional({ values: 'falsy' })
+    .custom((value) => {
+      const d = value instanceof Date ? value : new Date(value);
+      if (Number.isNaN(d.getTime())) {
+        throw new Error('targetDate must be a valid date');
+      }
+      if (d.getTime() <= Date.now()) {
+        throw new Error('targetDate must be in the future');
+      }
+      return true;
+    }),
 ];
 
 /**
