@@ -8,21 +8,27 @@
  * under `/ai`, so every endpoint defined here automatically inherits
  * the `protect` middleware (R4.1) — no per-route auth wiring required.
  *
- * Endpoint (mounted at `/api/ai`):
- *   - POST /chat — assemble the user's financial snapshot, send it to
- *                  Claude with the user's message, return `{ reply }`.
- *                  Validation, ownership, snapshot composition, and
- *                  the failure → uniform 503 path all live in the
- *                  controller. (R18.1–R18.7)
+ * Endpoints (mounted at `/api/ai`):
+ *   - POST   /chat    — assemble the user's rich financial snapshot, send it
+ *                       to Gemini with the user's message and recent
+ *                       conversation turns, persist the exchange, and return
+ *                       `{ reply }`.
+ *   - GET    /history — return the user's recent conversation turns.
+ *   - DELETE /history — clear the user's conversation history.
  *
  * The shared `chatValidators` chain is applied to POST /chat; the
  * controller surfaces the first validation error as a uniform 400
- * response. The conversation is never persisted (R18.7).
+ * response.
  */
 
 const express = require('express');
 
-const { chat, chatValidators } = require('../controllers/aiController');
+const {
+  chat,
+  chatValidators,
+  getHistory,
+  clearHistory,
+} = require('../controllers/aiController');
 
 /**
  * Sub-router for the AI advisor resource. Exported so the aggregator
@@ -35,6 +41,8 @@ const { chat, chatValidators } = require('../controllers/aiController');
 const aiRouter = express.Router();
 
 aiRouter.post('/chat', chatValidators, chat);
+aiRouter.get('/history', getHistory);
+aiRouter.delete('/history', clearHistory);
 
 module.exports = aiRouter;
 module.exports.aiRouter = aiRouter;

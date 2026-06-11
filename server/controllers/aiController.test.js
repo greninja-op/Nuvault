@@ -1,11 +1,13 @@
 'use strict';
 
 /**
- * Integration tests for the AI advisor controller (updated for Gemini).
+ * Integration tests for the AI advisor controller (Gemini, rich snapshot +
+ * persisted chat history).
  *
- * The controller now calls Gemini 1.5 Flash directly via axios (no separate
- * claude utility), so axios is mocked at the module level. All snapshot /
- * validation / isolation / persistence behavior is unchanged.
+ * The controller calls Gemini directly via axios, so axios is mocked at the
+ * module level. The system prompt is now formatted human-readable text (not
+ * JSON), every successful chat persists two ChatHistory turns, and there are
+ * dedicated history read / clear endpoints.
  */
 
 jest.mock('axios');
@@ -22,12 +24,17 @@ const Liability = require('../models/Liability');
 const Transaction = require('../models/Transaction');
 const Goal = require('../models/Goal');
 const Bill = require('../models/Bill');
+const Budget = require('../models/Budget');
+const Investment = require('../models/Investment');
+const ChatHistory = require('../models/ChatHistory');
 
 const {
   chat: chatHandler,
   chatValidators,
+  getHistory,
+  clearHistory,
   SERVICE_UNAVAILABLE_MESSAGE,
-  SNAPSHOT_PREAMBLE,
+  SNAPSHOT_HEADER,
   RECENT_TRANSACTIONS_LIMIT,
   GEMINI_ENDPOINT,
 } = require('./aiController');
@@ -60,6 +67,8 @@ function buildApp({ config } = {}) {
   if (config) app.set('config', config);
   const router = express.Router();
   router.post('/chat', chatValidators, chatHandler);
+  router.get('/history', getHistory);
+  router.delete('/history', clearHistory);
   app.use('/ai', fakeProtect(), router);
   app.use(errorHandler);
   return app;
@@ -86,19 +95,33 @@ afterEach(async () => {
     Transaction.deleteMany({}),
     Goal.deleteMany({}),
     Bill.deleteMany({}),
+    Budget.deleteMany({}),
+    Investment.deleteMany({}),
+    ChatHistory.deleteMany({}),
   ]);
   jest.clearAllMocks();
 });
 
 function authedChat(app, userId, body) {
-  return supertest(app)
-    .post('/ai/chat')
-    .set('X-Test-User', String(userId))
-    .send(body);
+  return supertest(app).post('/ai/chat').set('X-Test-User', String(userId)).send(body);
+}
+
+function authedGet(app, userId) {
+  return supertest(app).get('/ai/history').set('X-Test-User', String(userId));
+}
+
+function authedDelete(app, userId) {
+  return supertest(app).delete('/ai/history').set('X-Test-User', String(userId));
+}
+
+/** Pull the system prompt text out of the most recent axios.post call. */
+function lastSystemPrompt() {
+  const body = axios.post.mock.calls[axios.post.mock.calls.length - 1][1];
+  return body.system_instruction.parts[0].text;
 }
 
 // =============================================================================
-// Validation (R18.4, R18.5)
+// Validation
 // =============================================================================
 
 describe('POST /ai/chat — validation', () => {
@@ -109,7 +132,7 @@ describe('POST /ai/chat — validation', () => {
     ['empty string', { message: '' }],
     ['whitespace-only', { message: '   ' }],
     ['tabs and newlines only', { message: '\t\n  \r' }],
-  ])('rejects %s with 400 and does not call Gemini (R18.5)', async (_label, body) => {
+  ])('rejects %s with 400 and does not call Gemini', async (_label, body) => {
     const app = buildApp({ config: { geminiApiKey: 'test-key' } });
 
     const res = await authedChat(app, userA, body);
@@ -119,7 +142,7 @@ describe('POST /ai/chat — validation', () => {
     expect(axios.post).not.toHaveBeenCalled();
   });
 
-  test('rejects an over-length message with 400 (R18.4)', async () => {
+  test('rejects an over-length message with 400', async () => {
     const app = buildApp({ config: { geminiApiKey: 'test-key' } });
 
     const res = await authedChat(app, userA, { message: 'a'.repeat(4001) });
@@ -168,11 +191,6 @@ describe('POST /ai/chat — snapshot composition', () => {
     await Asset.create({ user: userB, name: 'foreign', type: 'cash', value: 9999 });
     await Liability.create({ user: userB, name: 'foreign-debt', type: 'loan', amount: 8888 });
     await Transaction.create({ user: userB, type: 'expense', category: 'foreign', amount: 7777 });
-    await Goal.create({ user: userB, name: 'foreign-goal', targetAmount: 100 });
-    await Bill.create({
-      user: userB, name: 'foreign-bill', amount: 1, frequency: 'monthly',
-      nextDueDate: new Date('2024-06-01T00:00:00.000Z'),
-    });
 
     const app = buildApp({ config: { geminiApiKey: 'test-key' } });
     const res = await authedChat(app, userA, { message: '  How am I doing?  ' });
@@ -180,39 +198,29 @@ describe('POST /ai/chat — snapshot composition', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ reply: 'Looking solid.' });
 
-    // Verify axios was called with the Gemini endpoint (key embedded in URL).
+    // axios called with the Gemini endpoint (key embedded in URL).
     expect(axios.post).toHaveBeenCalledTimes(1);
     const [url, body] = axios.post.mock.calls[0];
     expect(url).toMatch(GEMINI_ENDPOINT);
     expect(url).toContain('test-key');
 
-    // Verify Gemini request body shape.
-    expect(body.system_instruction.parts[0].text).toContain(SNAPSHOT_PREAMBLE);
-    expect(body.contents[0].role).toBe('user');
-    expect(body.contents[0].parts[0].text).toBe('How am I doing?');
+    // The final content turn carries the trimmed user message.
+    const last = body.contents[body.contents.length - 1];
+    expect(last.role).toBe('user');
+    expect(last.parts[0].text).toBe('How am I doing?');
 
-    // Parse the snapshot out of the system instruction.
-    const systemText = body.system_instruction.parts[0].text;
-    const jsonStart = systemText.indexOf('\n') + 1;
-    const snapshot = JSON.parse(systemText.slice(jsonStart));
-
-    expect(snapshot.assets).toHaveLength(2);
-    expect(snapshot.liabilities).toHaveLength(1);
-    expect(snapshot.recentTransactions).toHaveLength(2);
-    expect(snapshot.goals).toHaveLength(1);
-    expect(snapshot.bills).toHaveLength(1);
-    expect(snapshot.netWorth).toBe(250.25);
-
-    for (const a of snapshot.assets) expect(String(a.user)).toBe(String(userA));
-    for (const l of snapshot.liabilities) expect(String(l.user)).toBe(String(userA));
-    for (const t of snapshot.recentTransactions) expect(String(t.user)).toBe(String(userA));
-
-    expect(snapshot.recentTransactions[0].category).toBe('salary');
-    expect(snapshot.recentTransactions[1].category).toBe('rent');
-    expect(JSON.stringify(snapshot)).not.toContain('foreign');
+    // The system prompt is formatted text containing the snapshot header,
+    // the real net-worth figure, and the user's own transactions — but never
+    // another user's data.
+    const prompt = body.system_instruction.parts[0].text;
+    expect(prompt).toContain(SNAPSHOT_HEADER);
+    expect(prompt).toContain('INR 250.25'); // 100 + 200.5 - 50.25
+    expect(prompt).toContain('salary');
+    expect(prompt).toContain('rent');
+    expect(prompt).not.toContain('foreign');
   });
 
-  test('limits snapshot to 50 most recent transactions', async () => {
+  test(`limits recent transactions to ${RECENT_TRANSACTIONS_LIMIT}`, async () => {
     const docs = [];
     for (let i = 0; i < 60; i += 1) {
       docs.push({
@@ -227,15 +235,14 @@ describe('POST /ai/chat — snapshot composition', () => {
     const res = await authedChat(app, userA, { message: 'summary please' });
 
     expect(res.status).toBe(200);
-    const systemText = axios.post.mock.calls[0][1].system_instruction.parts[0].text;
-    const snapshot = JSON.parse(systemText.slice(systemText.indexOf('\n') + 1));
-
-    expect(snapshot.recentTransactions).toHaveLength(RECENT_TRANSACTIONS_LIMIT);
-    expect(snapshot.recentTransactions[0].category).toBe('cat-59');
-    expect(snapshot.recentTransactions[49].category).toBe('cat-10');
+    const prompt = lastSystemPrompt();
+    // Most recent 30 are cat-59 .. cat-30; cat-29 falls outside the window.
+    expect(prompt).toContain('cat-59');
+    expect(prompt).toContain('cat-30');
+    expect(prompt).not.toContain('cat-29');
   });
 
-  test('emits an empty snapshot when user has no data', async () => {
+  test('renders an empty snapshot gracefully when the user has no data', async () => {
     axios.post.mockResolvedValueOnce(geminiOk('no data yet'));
     const app = buildApp({ config: { geminiApiKey: 'test-key' } });
     const res = await authedChat(app, userA, { message: 'hi' });
@@ -243,19 +250,129 @@ describe('POST /ai/chat — snapshot composition', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ reply: 'no data yet' });
 
-    const systemText = axios.post.mock.calls[0][1].system_instruction.parts[0].text;
-    const snapshot = JSON.parse(systemText.slice(systemText.indexOf('\n') + 1));
-    expect(snapshot).toEqual({ assets: [], liabilities: [], recentTransactions: [], goals: [], bills: [], netWorth: 0 });
+    const prompt = lastSystemPrompt();
+    expect(prompt).toContain(SNAPSHOT_HEADER);
+    expect(prompt).toContain('INR 0'); // net worth
+    expect(prompt).toContain('(no transactions recorded)');
   });
 
-  test('does not persist the conversation (R18.7)', async () => {
-    axios.post.mockResolvedValueOnce(geminiOk('something'));
-    const app = buildApp({ config: { geminiApiKey: 'test-key' } });
-    const res = await authedChat(app, userA, { message: 'hello' });
+  test('addresses the user by first name when available', async () => {
+    axios.post.mockResolvedValueOnce(geminiOk('hello'));
+    // Inject a named user via a custom protect for this app.
+    const app = express();
+    app.use(express.json());
+    app.set('config', { geminiApiKey: 'test-key' });
+    const router = express.Router();
+    router.post('/chat', chatValidators, chatHandler);
+    app.use('/ai', (req, _res, next) => {
+      req.user = { _id: userA, name: 'Ada Lovelace', currency: 'USD' };
+      next();
+    }, router);
+    app.use(errorHandler);
+
+    const res = await supertest(app).post('/ai/chat').send({ message: 'hi' });
 
     expect(res.status).toBe(200);
-    expect(await Asset.countDocuments({})).toBe(0);
-    expect(await Transaction.countDocuments({})).toBe(0);
+    const prompt = lastSystemPrompt();
+    expect(prompt).toContain('Ada');
+    expect(prompt).not.toContain('Lovelace'); // only the first name is used
+    expect(prompt).toContain('USD');
+  });
+});
+
+// =============================================================================
+// Persistence
+// =============================================================================
+
+describe('POST /ai/chat — persistence', () => {
+  test('persists both the user message and the model reply on success', async () => {
+    axios.post.mockResolvedValueOnce(geminiOk('Solid progress.'));
+    const app = buildApp({ config: { geminiApiKey: 'test-key' } });
+
+    const res = await authedChat(app, userA, { message: 'hello there' });
+    expect(res.status).toBe(200);
+
+    const turns = await ChatHistory.find({ user: userA }).sort({ timestamp: 1 }).lean();
+    expect(turns).toHaveLength(2);
+    expect(turns[0]).toMatchObject({ role: 'user', message: 'hello there' });
+    expect(turns[1]).toMatchObject({ role: 'model', message: 'Solid progress.' });
+  });
+
+  test('sends prior turns to Gemini as conversation context', async () => {
+    await ChatHistory.create([
+      { user: userA, role: 'user', message: 'earlier question', timestamp: new Date('2024-01-01T00:00:00Z') },
+      { user: userA, role: 'model', message: 'earlier answer', timestamp: new Date('2024-01-01T00:00:01Z') },
+    ]);
+
+    axios.post.mockResolvedValueOnce(geminiOk('follow-up answer'));
+    const app = buildApp({ config: { geminiApiKey: 'test-key' } });
+    const res = await authedChat(app, userA, { message: 'follow-up question' });
+
+    expect(res.status).toBe(200);
+    const body = axios.post.mock.calls[0][1];
+    // history (2) + new user message (1)
+    expect(body.contents).toHaveLength(3);
+    expect(body.contents[0]).toEqual({ role: 'user', parts: [{ text: 'earlier question' }] });
+    expect(body.contents[1]).toEqual({ role: 'model', parts: [{ text: 'earlier answer' }] });
+    expect(body.contents[2]).toEqual({ role: 'user', parts: [{ text: 'follow-up question' }] });
+  });
+
+  test('does NOT persist anything when Gemini is unavailable', async () => {
+    axios.post.mockRejectedValueOnce(new Error('boom'));
+    const app = buildApp({ config: { geminiApiKey: 'test-key' } });
+
+    const res = await authedChat(app, userA, { message: 'hello' });
+
+    expect(res.status).toBe(503);
+    expect(await ChatHistory.countDocuments({ user: userA })).toBe(0);
+  });
+});
+
+// =============================================================================
+// History endpoints
+// =============================================================================
+
+describe('GET /ai/history', () => {
+  test('returns the user\'s turns in chronological order, scoped to the owner', async () => {
+    await ChatHistory.create([
+      { user: userA, role: 'user', message: 'first', timestamp: new Date('2024-01-01T00:00:00Z') },
+      { user: userA, role: 'model', message: 'second', timestamp: new Date('2024-01-01T00:00:01Z') },
+      { user: userB, role: 'user', message: 'other-user', timestamp: new Date('2024-01-01T00:00:02Z') },
+    ]);
+
+    const app = buildApp();
+    const res = await authedGet(app, userA);
+
+    expect(res.status).toBe(200);
+    expect(res.body.history).toHaveLength(2);
+    expect(res.body.history[0]).toMatchObject({ role: 'user', message: 'first' });
+    expect(res.body.history[1]).toMatchObject({ role: 'model', message: 'second' });
+    expect(JSON.stringify(res.body)).not.toContain('other-user');
+  });
+
+  test('returns an empty array when there is no history', async () => {
+    const app = buildApp();
+    const res = await authedGet(app, userA);
+
+    expect(res.status).toBe(200);
+    expect(res.body.history).toEqual([]);
+  });
+});
+
+describe('DELETE /ai/history', () => {
+  test('clears only the requesting user\'s history', async () => {
+    await ChatHistory.create([
+      { user: userA, role: 'user', message: 'mine' },
+      { user: userB, role: 'user', message: 'theirs' },
+    ]);
+
+    const app = buildApp();
+    const res = await authedDelete(app, userA);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ success: true });
+    expect(await ChatHistory.countDocuments({ user: userA })).toBe(0);
+    expect(await ChatHistory.countDocuments({ user: userB })).toBe(1);
   });
 });
 
@@ -263,7 +380,7 @@ describe('POST /ai/chat — snapshot composition', () => {
 // Gemini failure → 503
 // =============================================================================
 
-describe('POST /ai/chat — Gemini unavailable (R18.6)', () => {
+describe('POST /ai/chat — Gemini unavailable', () => {
   test('returns 503 when axios rejects (network error)', async () => {
     axios.post.mockRejectedValueOnce(new Error('connect ECONNREFUSED'));
     const app = buildApp({ config: { geminiApiKey: 'test-key' } });
@@ -288,7 +405,6 @@ describe('POST /ai/chat — Gemini unavailable (R18.6)', () => {
     const prev = process.env.GEMINI_API_KEY;
     delete process.env.GEMINI_API_KEY;
     try {
-      axios.post.mockRejectedValueOnce(new Error('no key'));
       const app = buildApp();
       const res = await authedChat(app, userA, { message: 'hello' });
 

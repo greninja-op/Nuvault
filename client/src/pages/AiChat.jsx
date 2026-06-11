@@ -3,34 +3,63 @@ import apiClient from '../api/client';
 import { extractError } from '../lib/format';
 
 /**
- * AI advisor chat. Posts the message to `POST /ai/chat` and renders a
- * conversation in memory only — the backend never persists chat history
- * (see design.md, Requirement 18.7).
+ * AI advisor chat. Posts to `POST /ai/chat`, which replies using a rich
+ * snapshot of the user's real finances. The backend persists every turn, so
+ * the conversation is restored on load (`GET /ai/history`) and can be wiped
+ * with `DELETE /ai/history`.
  *
- * On a 503 response (Claude unavailable) the API surfaces a generic
- * error which `extractError` will pick up as the "reply".
+ * Backend stores roles in Gemini's vocabulary ('user' / 'model'); the UI
+ * renders 'user' on the right and everything else (model replies, errors) on
+ * the left.
  *
- * Mobile layout: the section is a full-height flex column — the message
- * area is `flex-1 overflow-y-auto` and the input row sits pinned at the
- * bottom. Quick-prompt chips scroll horizontally in a single no-wrap row.
+ * Mobile layout: full-height flex column — the message area is
+ * `flex-1 overflow-y-auto` and the input row is pinned at the bottom.
+ * Quick-prompt chips scroll horizontally in a single no-wrap row.
  */
 
-/** Tappable starter prompts shown above the input. */
+/** Data-driven starter prompts shown above the input. */
 const QUICK_PROMPTS = [
-  'How is my net worth trending?',
-  'Where can I save money?',
-  'Am I saving enough each month?',
-  'How are my investments doing?',
-  'Which budgets am I overspending?',
-  'Suggest ways to clear my liabilities.',
+  'How am I doing this month?',
+  'Where am I overspending?',
+  'Am I on track for my goals?',
+  'What bills are due soon?',
+  'How is my portfolio doing?',
+  'What should I do with extra money?',
 ];
+
+/** Normalise a backend turn ('user' | 'model') into a render entry. */
+function toEntry(turn) {
+  return {
+    role: turn.role === 'user' ? 'user' : 'assistant',
+    content: turn.message ?? '',
+  };
+}
 
 export default function AiChat() {
   const [history, setHistory] = useState([]);
   const [message, setMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [error, setError] = useState(null);
   const scrollRef = useRef(null);
+
+  // Restore the saved conversation on mount.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const { data } = await apiClient.get('/ai/history');
+        if (active && Array.isArray(data?.history)) {
+          setHistory(data.history.map(toEntry));
+        }
+      } catch {
+        // A failed restore is non-fatal — start with an empty chat.
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -68,14 +97,37 @@ export default function AiChat() {
     send(message);
   }
 
+  async function handleClear() {
+    if (clearing || submitting || history.length === 0) return;
+    setClearing(true);
+    setError(null);
+    try {
+      await apiClient.delete('/ai/history');
+      setHistory([]);
+    } catch (err) {
+      setError(extractError(err, 'Could not clear the conversation.'));
+    } finally {
+      setClearing(false);
+    }
+  }
+
   return (
     <section className="flex h-[calc(100dvh-11rem)] flex-col md:h-[70vh]">
-      <header className="shrink-0">
-        <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">AI advisor</h1>
-        <p className="text-sm text-slate-600">
-          Ask for advice based on your current financial snapshot. Conversations
-          are not stored.
-        </p>
+      <header className="flex shrink-0 items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">AI advisor</h1>
+          <p className="text-sm text-slate-600">
+            Personalised advice based on your real Nuvault finances.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleClear}
+          disabled={clearing || submitting || history.length === 0}
+          className="flex min-h-[40px] shrink-0 items-center rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+        >
+          {clearing ? 'Clearing…' : 'Clear chat'}
+        </button>
       </header>
 
       {/* Quick prompts — single horizontally scrollable row */}
@@ -127,8 +179,10 @@ export default function AiChat() {
             ))}
             {submitting && (
               <li className="flex justify-start">
-                <div className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-500">
-                  Thinking…
+                <div className="flex items-center gap-1 rounded-lg bg-slate-100 px-3 py-3">
+                  <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.3s]" />
+                  <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.15s]" />
+                  <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400" />
                 </div>
               </li>
             )}
