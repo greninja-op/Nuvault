@@ -20,8 +20,9 @@ module.exports = {
       max_restarts: 10,
       restart_delay: 2000,
       watch: false,
+      // Use development so dotenv loads server/.env at boot.
       env: {
-        NODE_ENV: 'production',
+        NODE_ENV: 'development',
       },
     },
   ],

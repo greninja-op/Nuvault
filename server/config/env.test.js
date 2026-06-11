@@ -32,7 +32,7 @@ function completeEnv(overrides = {}) {
     MONGO_URI: 'mongodb://localhost:27017/nuvault',
     JWT_SECRET: 'test-jwt-secret',
     JWT_EXPIRE: '30d',
-    CLAUDE_API_KEY: 'test-claude-key',
+    GEMINI_API_KEY: 'test-gemini-key',
     EXCHANGERATE_API_KEY: 'test-fx-key',
     CLIENT_ORIGIN: 'http://localhost:5173',
     NODE_ENV: 'test',
@@ -62,7 +62,7 @@ describe('config/env REQUIRED_KEYS', () => {
       'MONGO_URI',
       'JWT_SECRET',
       'JWT_EXPIRE',
-      'CLAUDE_API_KEY',
+      'GEMINI_API_KEY',
       'EXCHANGERATE_API_KEY',
       'CLIENT_ORIGIN',
     ]);
@@ -77,14 +77,14 @@ describe('config/env findMissingKeys', () => {
   test('treats undefined, missing, and whitespace-only values as absent', () => {
     const env = completeEnv({
       JWT_SECRET: undefined,
-      CLAUDE_API_KEY: '   ',
+      GEMINI_API_KEY: '   ',
     });
     delete env.MONGO_URI;
 
     const missing = findMissingKeys(env);
 
     expect(missing).toEqual(
-      expect.arrayContaining(['MONGO_URI', 'JWT_SECRET', 'CLAUDE_API_KEY'])
+      expect.arrayContaining(['MONGO_URI', 'JWT_SECRET', 'GEMINI_API_KEY'])
     );
     expect(missing).toHaveLength(3);
   });
@@ -149,7 +149,7 @@ describe('config/env loadConfig', () => {
       mongoUri: 'mongodb://localhost:27017/nuvault',
       jwtSecret: 'test-jwt-secret',
       jwtExpire: '30d',
-      claudeApiKey: 'test-claude-key',
+      geminiApiKey: 'test-gemini-key',
       exchangeRateApiKey: 'test-fx-key',
       clientOrigin: 'http://localhost:5173',
       nodeEnv: 'production',

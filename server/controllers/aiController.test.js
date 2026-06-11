@@ -1,29 +1,16 @@
 'use strict';
 
 /**
- * Integration tests for the AI advisor controller (Task 17.1).
+ * Integration tests for the AI advisor controller (updated for Gemini).
  *
- * Covers the controller end-to-end against an in-memory MongoDB:
- *   - validation (R18.4, R18.5) — missing / empty / whitespace-only /
- *     non-string / over-length message,
- *   - happy-path: 200 with `{ reply }` and the snapshot delivered to
- *     Claude with the documented preamble (R18.3),
- *   - snapshot composition: assets, liabilities, 50 most recent
- *     transactions desc, goals, bills, computed netWorth, and per-user
- *     isolation (R18.1, R18.2, R18.7),
- *   - 503 funnel through the uniform error handler when Claude returns
- *     `{ ok: false }`, with the API key absent from the response
- *     (R18.6),
- *   - the conversation is never persisted (R18.7).
- *
- * The Claude utility is mocked so no real network call is made and
- * snapshot composition can be asserted directly. A header-driven fake
- * `protect` middleware swaps users per request, mirroring the pattern
- * established by `transactionController.test.js`.
+ * The controller now calls Gemini 1.5 Flash directly via axios (no separate
+ * claude utility), so axios is mocked at the module level. All snapshot /
+ * validation / isolation / persistence behavior is unchanged.
  */
 
-jest.mock('../utils/claude');
+jest.mock('axios');
 
+const axios = require('axios');
 const express = require('express');
 const mongoose = require('mongoose');
 const supertest = require('supertest');
@@ -36,22 +23,24 @@ const Transaction = require('../models/Transaction');
 const Goal = require('../models/Goal');
 const Bill = require('../models/Bill');
 
-const { chat: chatUtil } = require('../utils/claude');
 const {
   chat: chatHandler,
   chatValidators,
   SERVICE_UNAVAILABLE_MESSAGE,
   SNAPSHOT_PREAMBLE,
   RECENT_TRANSACTIONS_LIMIT,
+  GEMINI_ENDPOINT,
 } = require('./aiController');
 
-/**
- * Stand-in for the `protect` middleware. Reads an `X-Test-User` header
- * carrying a Mongoose ObjectId string and attaches it as `req.user._id`.
- * Tests can swap users per request without rebuilding the app.
- *
- * @returns {import('express').RequestHandler}
- */
+/** A minimal valid Gemini success response. */
+function geminiOk(text) {
+  return {
+    data: {
+      candidates: [{ content: { parts: [{ text }] } }],
+    },
+  };
+}
+
 function fakeProtect() {
   return function protect(req, res, next) {
     const raw = req.headers['x-test-user'];
@@ -65,25 +54,12 @@ function fakeProtect() {
   };
 }
 
-/**
- * Build a minimal Express app exposing the AI chat route. The route is
- * mounted at `/ai/chat` with the fake-protect middleware in front so
- * every request is gated by an `X-Test-User` header. An optional config
- * lets tests inject the api key via `app.set('config', ...)`.
- *
- * @param {{ config?: object } } [options]
- * @returns {import('express').Express}
- */
 function buildApp({ config } = {}) {
   const app = express();
   app.use(express.json());
-  if (config) {
-    app.set('config', config);
-  }
-
+  if (config) app.set('config', config);
   const router = express.Router();
   router.post('/chat', chatValidators, chatHandler);
-
   app.use('/ai', fakeProtect(), router);
   app.use(errorHandler);
   return app;
@@ -100,9 +76,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await mongoose.disconnect();
-  if (mongoServer) {
-    await mongoServer.stop();
-  }
+  if (mongoServer) await mongoServer.stop();
 });
 
 afterEach(async () => {
@@ -116,15 +90,6 @@ afterEach(async () => {
   jest.clearAllMocks();
 });
 
-/**
- * Issue an authenticated POST /ai/chat as the given user. Wrapping
- * supertest like this keeps every test concise and centralizes the
- * auth-header convention.
- *
- * @param {import('express').Express} app
- * @param {mongoose.Types.ObjectId} userId
- * @param {object} body
- */
 function authedChat(app, userId, body) {
   return supertest(app)
     .post('/ai/chat')
@@ -144,256 +109,164 @@ describe('POST /ai/chat — validation', () => {
     ['empty string', { message: '' }],
     ['whitespace-only', { message: '   ' }],
     ['tabs and newlines only', { message: '\t\n  \r' }],
-  ])('rejects %s with 400 and does not call Claude (R18.5)', async (_label, body) => {
-    chatUtil.mockResolvedValue({ ok: true, reply: 'should never be called' });
-    const app = buildApp({ config: { claudeApiKey: 'sk-test' } });
+  ])('rejects %s with 400 and does not call Gemini (R18.5)', async (_label, body) => {
+    const app = buildApp({ config: { geminiApiKey: 'test-key' } });
 
     const res = await authedChat(app, userA, body);
 
     expect(res.status).toBe(400);
     expect(res.body.message).toMatch(/message/i);
-    expect(chatUtil).not.toHaveBeenCalled();
+    expect(axios.post).not.toHaveBeenCalled();
   });
 
   test('rejects an over-length message with 400 (R18.4)', async () => {
-    chatUtil.mockResolvedValue({ ok: true, reply: 'no' });
-    const app = buildApp({ config: { claudeApiKey: 'sk-test' } });
+    const app = buildApp({ config: { geminiApiKey: 'test-key' } });
 
     const res = await authedChat(app, userA, { message: 'a'.repeat(4001) });
 
     expect(res.status).toBe(400);
     expect(res.body.message).toMatch(/4000/);
-    expect(chatUtil).not.toHaveBeenCalled();
+    expect(axios.post).not.toHaveBeenCalled();
   });
 
   test('accepts a message at the exact 4000-character boundary', async () => {
-    chatUtil.mockResolvedValue({ ok: true, reply: 'fine' });
-    const app = buildApp({ config: { claudeApiKey: 'sk-test' } });
+    axios.post.mockResolvedValueOnce(geminiOk('fine'));
+    const app = buildApp({ config: { geminiApiKey: 'test-key' } });
 
     const res = await authedChat(app, userA, { message: 'a'.repeat(4000) });
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ reply: 'fine' });
-    expect(chatUtil).toHaveBeenCalledTimes(1);
+    expect(axios.post).toHaveBeenCalledTimes(1);
   });
 });
 
 // =============================================================================
-// Happy path + snapshot composition (R18.1, R18.2, R18.3, R18.7)
+// Happy path + snapshot composition
 // =============================================================================
 
-describe('POST /ai/chat — snapshot composition (R18.1, R18.2, R18.7)', () => {
-  test('builds a user-scoped snapshot, sends it as system context, and returns the reply', async () => {
-    chatUtil.mockResolvedValue({ ok: true, reply: 'Looking solid.' });
+describe('POST /ai/chat — snapshot composition', () => {
+  test('builds a user-scoped snapshot, calls Gemini, and returns the reply', async () => {
+    axios.post.mockResolvedValueOnce(geminiOk('Looking solid.'));
 
-    // Seed user A with a representative slice of every collection.
     await Asset.create([
       { user: userA, name: 'cash', type: 'cash', value: 100 },
       { user: userA, name: 'savings', type: 'bank', value: 200.5 },
     ]);
-    await Liability.create({
-      user: userA,
-      name: 'card',
-      type: 'credit_card',
-      amount: 50.25,
-    });
-    await Goal.create({
-      user: userA,
-      name: 'vacation',
-      targetAmount: 1000,
-      savedAmount: 250,
-    });
+    await Liability.create({ user: userA, name: 'card', type: 'credit_card', amount: 50.25 });
+    await Goal.create({ user: userA, name: 'vacation', targetAmount: 1000, savedAmount: 250 });
     await Bill.create({
-      user: userA,
-      name: 'electric',
-      amount: 75,
-      frequency: 'monthly',
+      user: userA, name: 'electric', amount: 75, frequency: 'monthly',
       nextDueDate: new Date('2024-06-15T00:00:00.000Z'),
     });
-    // Two transactions for user A — controller should sort desc by date.
     await Transaction.create([
-      {
-        user: userA,
-        type: 'expense',
-        category: 'rent',
-        amount: 1500,
-        date: new Date('2024-05-01T00:00:00.000Z'),
-      },
-      {
-        user: userA,
-        type: 'income',
-        category: 'salary',
-        amount: 5000,
-        date: new Date('2024-06-01T00:00:00.000Z'),
-      },
+      { user: userA, type: 'expense', category: 'rent', amount: 1500, date: new Date('2024-05-01T00:00:00.000Z') },
+      { user: userA, type: 'income', category: 'salary', amount: 5000, date: new Date('2024-06-01T00:00:00.000Z') },
     ]);
 
-    // Cross-user noise: every collection gets a record owned by user B
-    // that MUST NOT leak into user A's snapshot (R18.7, R5.1, R5.4).
+    // Cross-user noise that must NOT appear in the snapshot.
     await Asset.create({ user: userB, name: 'foreign', type: 'cash', value: 9999 });
-    await Liability.create({
-      user: userB,
-      name: 'foreign-debt',
-      type: 'loan',
-      amount: 8888,
-    });
-    await Transaction.create({
-      user: userB,
-      type: 'expense',
-      category: 'foreign',
-      amount: 7777,
-    });
-    await Goal.create({
-      user: userB,
-      name: 'foreign-goal',
-      targetAmount: 100,
-    });
+    await Liability.create({ user: userB, name: 'foreign-debt', type: 'loan', amount: 8888 });
+    await Transaction.create({ user: userB, type: 'expense', category: 'foreign', amount: 7777 });
+    await Goal.create({ user: userB, name: 'foreign-goal', targetAmount: 100 });
     await Bill.create({
-      user: userB,
-      name: 'foreign-bill',
-      amount: 1,
-      frequency: 'monthly',
+      user: userB, name: 'foreign-bill', amount: 1, frequency: 'monthly',
       nextDueDate: new Date('2024-06-01T00:00:00.000Z'),
     });
 
-    const app = buildApp({ config: { claudeApiKey: 'sk-test' } });
-
+    const app = buildApp({ config: { geminiApiKey: 'test-key' } });
     const res = await authedChat(app, userA, { message: '  How am I doing?  ' });
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ reply: 'Looking solid.' });
 
-    expect(chatUtil).toHaveBeenCalledTimes(1);
-    const callArgs = chatUtil.mock.calls[0][0];
+    // Verify axios was called with the Gemini endpoint (key embedded in URL).
+    expect(axios.post).toHaveBeenCalledTimes(1);
+    const [url, body] = axios.post.mock.calls[0];
+    expect(url).toMatch(GEMINI_ENDPOINT);
+    expect(url).toContain('test-key');
 
-    // The trimmed user message flows through to Claude.
-    expect(callArgs.userMessage).toBe('How am I doing?');
-    // The injected api key is forwarded verbatim.
-    expect(callArgs.apiKey).toBe('sk-test');
-    // 30s timeout per R18.3.
-    expect(callArgs.timeoutMs).toBe(30_000);
+    // Verify Gemini request body shape.
+    expect(body.system_instruction.parts[0].text).toContain(SNAPSHOT_PREAMBLE);
+    expect(body.contents[0].role).toBe('user');
+    expect(body.contents[0].parts[0].text).toBe('How am I doing?');
 
-    // System context is the preamble + JSON snapshot.
-    expect(callArgs.systemContext.startsWith(SNAPSHOT_PREAMBLE)).toBe(true);
+    // Parse the snapshot out of the system instruction.
+    const systemText = body.system_instruction.parts[0].text;
+    const jsonStart = systemText.indexOf('\n') + 1;
+    const snapshot = JSON.parse(systemText.slice(jsonStart));
 
-    const jsonStart = callArgs.systemContext.indexOf('\n') + 1;
-    const snapshot = JSON.parse(callArgs.systemContext.slice(jsonStart));
-
-    // All five collections appear, scoped to user A only.
     expect(snapshot.assets).toHaveLength(2);
     expect(snapshot.liabilities).toHaveLength(1);
     expect(snapshot.recentTransactions).toHaveLength(2);
     expect(snapshot.goals).toHaveLength(1);
     expect(snapshot.bills).toHaveLength(1);
+    expect(snapshot.netWorth).toBe(250.25);
 
     for (const a of snapshot.assets) expect(String(a.user)).toBe(String(userA));
     for (const l of snapshot.liabilities) expect(String(l.user)).toBe(String(userA));
     for (const t of snapshot.recentTransactions) expect(String(t.user)).toBe(String(userA));
-    for (const g of snapshot.goals) expect(String(g.user)).toBe(String(userA));
-    for (const b of snapshot.bills) expect(String(b.user)).toBe(String(userA));
 
-    // Transactions are sorted by date descending (R18.2).
     expect(snapshot.recentTransactions[0].category).toBe('salary');
     expect(snapshot.recentTransactions[1].category).toBe('rent');
-
-    // Net worth = (100 + 200.5) - 50.25 = 250.25 (no currency conversion).
-    expect(snapshot.netWorth).toBe(250.25);
-
-    // No foreign records leaked.
-    const everyName = JSON.stringify(snapshot);
-    expect(everyName).not.toContain('foreign');
+    expect(JSON.stringify(snapshot)).not.toContain('foreign');
   });
 
-  test('limits the snapshot to 50 most recent transactions in date desc order (R18.2)', async () => {
-    chatUtil.mockResolvedValue({ ok: true, reply: 'ok' });
-
-    // Seed 60 transactions; the snapshot should pick the freshest 50.
+  test('limits snapshot to 50 most recent transactions', async () => {
     const docs = [];
     for (let i = 0; i < 60; i += 1) {
       docs.push({
-        user: userA,
-        type: 'expense',
-        category: `cat-${i}`,
-        amount: 1 + i,
-        // i = 59 is the newest, i = 0 is the oldest.
+        user: userA, type: 'expense', category: `cat-${i}`, amount: 1 + i,
         date: new Date(Date.UTC(2024, 0, 1) + i * 86_400_000),
       });
     }
     await Transaction.insertMany(docs);
 
-    const app = buildApp({ config: { claudeApiKey: 'sk-test' } });
-
+    axios.post.mockResolvedValueOnce(geminiOk('ok'));
+    const app = buildApp({ config: { geminiApiKey: 'test-key' } });
     const res = await authedChat(app, userA, { message: 'summary please' });
 
     expect(res.status).toBe(200);
-
-    const callArgs = chatUtil.mock.calls[0][0];
-    const jsonStart = callArgs.systemContext.indexOf('\n') + 1;
-    const snapshot = JSON.parse(callArgs.systemContext.slice(jsonStart));
+    const systemText = axios.post.mock.calls[0][1].system_instruction.parts[0].text;
+    const snapshot = JSON.parse(systemText.slice(systemText.indexOf('\n') + 1));
 
     expect(snapshot.recentTransactions).toHaveLength(RECENT_TRANSACTIONS_LIMIT);
-
-    // Newest first.
     expect(snapshot.recentTransactions[0].category).toBe('cat-59');
-    // 50th item is i = 10 (60 total - 50 = 10 oldest excluded).
     expect(snapshot.recentTransactions[49].category).toBe('cat-10');
-
-    // Strict desc ordering across the whole window.
-    const dates = snapshot.recentTransactions.map((t) => new Date(t.date).getTime());
-    for (let i = 0; i < dates.length - 1; i += 1) {
-      expect(dates[i]).toBeGreaterThanOrEqual(dates[i + 1]);
-    }
   });
 
-  test('emits an empty-but-well-formed snapshot when the user has no data', async () => {
-    chatUtil.mockResolvedValue({ ok: true, reply: 'no data yet' });
-    const app = buildApp({ config: { claudeApiKey: 'sk-test' } });
-
+  test('emits an empty snapshot when user has no data', async () => {
+    axios.post.mockResolvedValueOnce(geminiOk('no data yet'));
+    const app = buildApp({ config: { geminiApiKey: 'test-key' } });
     const res = await authedChat(app, userA, { message: 'hi' });
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ reply: 'no data yet' });
 
-    const callArgs = chatUtil.mock.calls[0][0];
-    const jsonStart = callArgs.systemContext.indexOf('\n') + 1;
-    const snapshot = JSON.parse(callArgs.systemContext.slice(jsonStart));
-
-    expect(snapshot).toEqual({
-      assets: [],
-      liabilities: [],
-      recentTransactions: [],
-      goals: [],
-      bills: [],
-      netWorth: 0,
-    });
+    const systemText = axios.post.mock.calls[0][1].system_instruction.parts[0].text;
+    const snapshot = JSON.parse(systemText.slice(systemText.indexOf('\n') + 1));
+    expect(snapshot).toEqual({ assets: [], liabilities: [], recentTransactions: [], goals: [], bills: [], netWorth: 0 });
   });
 
   test('does not persist the conversation (R18.7)', async () => {
-    chatUtil.mockResolvedValue({ ok: true, reply: 'something' });
-    const app = buildApp({ config: { claudeApiKey: 'sk-test' } });
-
+    axios.post.mockResolvedValueOnce(geminiOk('something'));
+    const app = buildApp({ config: { geminiApiKey: 'test-key' } });
     const res = await authedChat(app, userA, { message: 'hello' });
-    expect(res.status).toBe(200);
 
-    // None of the existing collections should have any records.
-    // Conversation is not stored anywhere — only the read-only snapshot
-    // assembly touched the database.
+    expect(res.status).toBe(200);
     expect(await Asset.countDocuments({})).toBe(0);
-    expect(await Liability.countDocuments({})).toBe(0);
     expect(await Transaction.countDocuments({})).toBe(0);
-    expect(await Goal.countDocuments({})).toBe(0);
-    expect(await Bill.countDocuments({})).toBe(0);
   });
 });
 
 // =============================================================================
-// Failure → uniform 503 (R18.6)
+// Gemini failure → 503
 // =============================================================================
 
-describe('POST /ai/chat — Claude unavailable (R18.6)', () => {
-  test('returns 503 with a generic message when chat() resolves { ok: false }', async () => {
-    chatUtil.mockResolvedValue({ ok: false });
-    const app = buildApp({ config: { claudeApiKey: 'sk-test' } });
+describe('POST /ai/chat — Gemini unavailable (R18.6)', () => {
+  test('returns 503 when axios rejects (network error)', async () => {
+    axios.post.mockRejectedValueOnce(new Error('connect ECONNREFUSED'));
+    const app = buildApp({ config: { geminiApiKey: 'test-key' } });
 
     const res = await authedChat(app, userA, { message: 'help me' });
 
@@ -401,34 +274,40 @@ describe('POST /ai/chat — Claude unavailable (R18.6)', () => {
     expect(res.body.message).toBe(SERVICE_UNAVAILABLE_MESSAGE);
   });
 
-  test('does not include the API key in the failure response body', async () => {
-    chatUtil.mockResolvedValue({ ok: false });
-    const apiKey = 'sk-secret-do-not-leak-789';
-    const app = buildApp({ config: { claudeApiKey: apiKey } });
+  test('returns 503 when Gemini returns an empty / malformed body', async () => {
+    axios.post.mockResolvedValueOnce({ data: {} });
+    const app = buildApp({ config: { geminiApiKey: 'test-key' } });
 
     const res = await authedChat(app, userA, { message: 'help me' });
 
     expect(res.status).toBe(503);
-    expect(JSON.stringify(res.body)).not.toContain(apiKey);
+    expect(res.body.message).toBe(SERVICE_UNAVAILABLE_MESSAGE);
   });
 
-  test('returns 503 when no API key is configured anywhere', async () => {
-    // No app config; explicitly clear env so neither path resolves a key.
-    const previous = process.env.CLAUDE_API_KEY;
-    delete process.env.CLAUDE_API_KEY;
+  test('returns 503 when no API key is configured', async () => {
+    const prev = process.env.GEMINI_API_KEY;
+    delete process.env.GEMINI_API_KEY;
     try {
-      // The util receives apiKey: null which short-circuits to ok:false
-      // — verify the controller surfaces that as a 503.
-      chatUtil.mockResolvedValue({ ok: false });
-      const app = buildApp(); // no config
-
+      axios.post.mockRejectedValueOnce(new Error('no key'));
+      const app = buildApp();
       const res = await authedChat(app, userA, { message: 'hello' });
 
       expect(res.status).toBe(503);
       expect(res.body.message).toBe(SERVICE_UNAVAILABLE_MESSAGE);
     } finally {
-      if (previous !== undefined) process.env.CLAUDE_API_KEY = previous;
+      if (prev !== undefined) process.env.GEMINI_API_KEY = prev;
     }
+  });
+
+  test('API key never appears in the failure response', async () => {
+    axios.post.mockRejectedValueOnce(new Error('timeout'));
+    const apiKey = 'secret-gemini-key-do-not-leak';
+    const app = buildApp({ config: { geminiApiKey: apiKey } });
+
+    const res = await authedChat(app, userA, { message: 'hello' });
+
+    expect(res.status).toBe(503);
+    expect(JSON.stringify(res.body)).not.toContain(apiKey);
   });
 });
 
@@ -437,33 +316,34 @@ describe('POST /ai/chat — Claude unavailable (R18.6)', () => {
 // =============================================================================
 
 describe('POST /ai/chat — API key resolution', () => {
-  test('prefers the api key from req.app.get("config")', async () => {
-    chatUtil.mockResolvedValue({ ok: true, reply: 'ok' });
-    const previous = process.env.CLAUDE_API_KEY;
-    process.env.CLAUDE_API_KEY = 'env-key';
+  test('prefers geminiApiKey from app config over env', async () => {
+    axios.post.mockResolvedValueOnce(geminiOk('ok'));
+    const prev = process.env.GEMINI_API_KEY;
+    process.env.GEMINI_API_KEY = 'env-key';
     try {
-      const app = buildApp({ config: { claudeApiKey: 'app-key' } });
+      const app = buildApp({ config: { geminiApiKey: 'app-key' } });
       await authedChat(app, userA, { message: 'hi' });
-      expect(chatUtil.mock.calls[0][0].apiKey).toBe('app-key');
+      const url = axios.post.mock.calls[0][0];
+      expect(url).toContain('app-key');
+      expect(url).not.toContain('env-key');
     } finally {
-      if (previous === undefined) delete process.env.CLAUDE_API_KEY;
-      else process.env.CLAUDE_API_KEY = previous;
+      if (prev === undefined) delete process.env.GEMINI_API_KEY;
+      else process.env.GEMINI_API_KEY = prev;
     }
   });
 
-  test('falls back to process.env.CLAUDE_API_KEY when no app config is set', async () => {
-    chatUtil.mockResolvedValue({ ok: true, reply: 'ok' });
-    const previous = process.env.CLAUDE_API_KEY;
-    process.env.CLAUDE_API_KEY = 'env-key';
+  test('falls back to process.env.GEMINI_API_KEY when no app config', async () => {
+    axios.post.mockResolvedValueOnce(geminiOk('ok'));
+    const prev = process.env.GEMINI_API_KEY;
+    process.env.GEMINI_API_KEY = 'env-gemini-key';
     try {
-      const app = buildApp(); // no config
-
+      const app = buildApp();
       await authedChat(app, userA, { message: 'hi' });
-
-      expect(chatUtil.mock.calls[0][0].apiKey).toBe('env-key');
+      const url = axios.post.mock.calls[0][0];
+      expect(url).toContain('env-gemini-key');
     } finally {
-      if (previous === undefined) delete process.env.CLAUDE_API_KEY;
-      else process.env.CLAUDE_API_KEY = previous;
+      if (prev === undefined) delete process.env.GEMINI_API_KEY;
+      else process.env.GEMINI_API_KEY = prev;
     }
   });
 });

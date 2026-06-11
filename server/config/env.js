@@ -5,7 +5,7 @@
  *
  * Responsibilities (Task 2.1):
  *   - Load every secret the server depends on (`MONGO_URI`, `JWT_SECRET`,
- *     `JWT_EXPIRE`, `CLAUDE_API_KEY`, `EXCHANGERATE_API_KEY`, `CLIENT_ORIGIN`)
+ *     `JWT_EXPIRE`, `GEMINI_API_KEY`, `EXCHANGERATE_API_KEY`, `CLIENT_ORIGIN`)
  *     from environment variables exclusively. No secret may be embedded in
  *     source (R22.1).
  *   - Validate that every required secret is present at boot. When any is
@@ -31,7 +31,7 @@ const REQUIRED_KEYS = Object.freeze([
   'MONGO_URI',
   'JWT_SECRET',
   'JWT_EXPIRE',
-  'CLAUDE_API_KEY',
+  'GEMINI_API_KEY',
   'EXCHANGERATE_API_KEY',
   'CLIENT_ORIGIN',
 ]);
@@ -165,7 +165,7 @@ function assertRequiredSecrets({
  *   mongoUri: string,
  *   jwtSecret: string,
  *   jwtExpire: string,
- *   claudeApiKey: string,
+ *   geminiApiKey: string,
  *   exchangeRateApiKey: string,
  *   clientOrigin: string,
  *   nodeEnv: string,
@@ -180,7 +180,7 @@ function buildConfig(env) {
     mongoUri: env.MONGO_URI,
     jwtSecret: env.JWT_SECRET,
     jwtExpire: env.JWT_EXPIRE,
-    claudeApiKey: env.CLAUDE_API_KEY,
+    geminiApiKey: env.GEMINI_API_KEY,
     exchangeRateApiKey: env.EXCHANGERATE_API_KEY,
     clientOrigin: env.CLIENT_ORIGIN,
     nodeEnv: env.NODE_ENV || 'development',
