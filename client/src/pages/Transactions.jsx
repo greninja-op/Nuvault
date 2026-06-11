@@ -30,7 +30,7 @@ const MONTHS = [
  *   DELETE /transactions/:id
  */
 export default function Transactions() {
-  const { displayCurrency } = useDisplayCurrency();
+  const { displayCurrency, format } = useDisplayCurrency();
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
@@ -209,13 +209,13 @@ export default function Transactions() {
           title="Income by category"
           rows={summary.income}
           total={totalIncome}
-          currency={displayCurrency}
+          format={format}
         />
         <SummaryColumn
           title="Expense by category"
           rows={summary.expense}
           total={totalExpense}
-          currency={displayCurrency}
+          format={format}
         />
       </div>
 
@@ -248,7 +248,7 @@ export default function Transactions() {
                     <td className="px-4 py-2">{tx.category}</td>
                     <td className="px-4 py-2 text-slate-600">{tx.description || '—'}</td>
                     <td className="px-4 py-2 text-right tabular-nums">
-                      {formatCurrency(tx.amount, displayCurrency)}
+                      {format(tx.amount)}
                     </td>
                     <td className="px-4 py-2 text-right">
                       <div className="flex justify-end gap-2">
@@ -303,7 +303,7 @@ export default function Transactions() {
                       tx.type === 'income' ? 'text-emerald-600' : 'text-slate-900'
                     }`}
                   >
-                    {formatCurrency(tx.amount, displayCurrency)}
+                    {format(tx.amount)}
                   </div>
                 </div>
                 <div className="mt-3 flex gap-2 border-t border-slate-100 pt-2">
@@ -432,13 +432,13 @@ function TypeBadge({ type }) {
   );
 }
 
-function SummaryColumn({ title, rows, total, currency }) {
+function SummaryColumn({ title, rows, total, format }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
         <span className="text-sm font-medium text-slate-700 tabular-nums whitespace-nowrap">
-          {formatCurrency(total, currency)}
+          {format(total)}
         </span>
       </div>
       {rows.length === 0 ? (
@@ -449,7 +449,7 @@ function SummaryColumn({ title, rows, total, currency }) {
             <li key={row.category} className="flex items-center justify-between gap-3 py-2">
               <span className="min-w-0 truncate text-slate-700">{row.category}</span>
               <span className="shrink-0 text-slate-900 tabular-nums whitespace-nowrap">
-                {formatCurrency(row.total, currency)}
+                {format(row.total)}
               </span>
             </li>
           ))}

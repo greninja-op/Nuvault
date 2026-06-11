@@ -24,7 +24,7 @@ const EMPTY_FORM = { category: '', limit: '', month: 1, year: new Date().getFull
  *   DELETE /budgets/:id
  */
 export default function Budgets() {
-  const { displayCurrency } = useDisplayCurrency();
+  const { displayCurrency, format } = useDisplayCurrency();
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
@@ -208,15 +208,15 @@ export default function Budgets() {
                   </div>
                   <div className="text-right">
                     <div className="text-sm text-slate-700 tabular-nums whitespace-nowrap">
-                      {formatCurrency(spent, displayCurrency)} of{' '}
-                      {formatCurrency(limit, displayCurrency)}
+                      {format(spent)} of{' '}
+                      {format(limit)}
                     </div>
                     <div
                       className={`text-xs ${budget.overBudget ? 'text-red-600' : 'text-slate-500'}`}
                     >
                       {budget.overBudget
                         ? 'Over budget'
-                        : `${formatCurrency(budget.remaining, displayCurrency)} remaining`}
+                        : `${format(budget.remaining)} remaining`}
                     </div>
                   </div>
                 </div>

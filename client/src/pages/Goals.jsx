@@ -21,7 +21,7 @@ const EMPTY_FORM = { name: '', targetAmount: '', targetDate: '', category: '' };
  *   DELETE /goals/:id
  */
 export default function Goals() {
-  const { displayCurrency } = useDisplayCurrency();
+  const { displayCurrency, format } = useDisplayCurrency();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -181,9 +181,9 @@ export default function Goals() {
                     )}
                   </div>
                   <div className="shrink-0 text-right text-sm text-slate-700 tabular-nums">
-                    {formatCurrency(goal.savedAmount, displayCurrency)}
+                    {format(goal.savedAmount)}
                     <div className="text-xs text-slate-400">
-                      of {formatCurrency(goal.targetAmount, displayCurrency)}
+                      of {format(goal.targetAmount)}
                     </div>
                   </div>
                 </div>

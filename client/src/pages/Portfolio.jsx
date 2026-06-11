@@ -192,7 +192,7 @@ function formFromItem(config, item) {
 }
 
 export default function Portfolio() {
-  const { displayCurrency } = useDisplayCurrency();
+  const { displayCurrency, format } = useDisplayCurrency();
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -350,15 +350,15 @@ export default function Portfolio() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <SummaryCard
             label="Total value"
-            value={formatCurrency(summary.totalCurrentValue, displayCurrency)}
+            value={format(summary.totalCurrentValue)}
           />
           <SummaryCard
             label="Total invested"
-            value={formatCurrency(summary.totalInvested, displayCurrency)}
+            value={format(summary.totalInvested)}
           />
           <SummaryCard
             label="Total returns"
-            value={formatCurrency(summary.totalReturns, displayCurrency)}
+            value={format(summary.totalReturns)}
             tone={summary.totalReturns >= 0 ? 'positive' : 'negative'}
           />
         </div>
@@ -386,7 +386,7 @@ export default function Portfolio() {
                   ))}
                 </Pie>
                 <Tooltip
-                  formatter={(value) => formatCurrency(value, displayCurrency)}
+                  formatter={(value) => format(value)}
                 />
                 <Legend />
               </PieChart>
@@ -404,7 +404,7 @@ export default function Portfolio() {
               key={cfg.kind}
               config={cfg}
               items={itemsByKind[cfg.kind] ?? []}
-              currency={displayCurrency}
+              format={format}
               onAdd={() => openCreate(cfg.kind)}
               onEdit={openEdit}
               onDelete={handleDelete}
@@ -481,7 +481,7 @@ export default function Portfolio() {
   );
 }
 
-function KindSection({ config, items, currency, onAdd, onEdit, onDelete }) {
+function KindSection({ config, items, format, onAdd, onEdit, onDelete }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
       <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
@@ -532,17 +532,17 @@ function KindSection({ config, items, currency, onAdd, onEdit, onDelete }) {
                       )}
                     </td>
                     <td className="px-4 py-2 text-right tabular-nums">
-                      {formatCurrency(item.invested, currency)}
+                      {format(item.invested)}
                     </td>
                     <td className="px-4 py-2 text-right tabular-nums">
-                      {formatCurrency(item.currentValue, currency)}
+                      {format(item.currentValue)}
                     </td>
                     <td
                       className={`px-4 py-2 text-right tabular-nums ${
                         item.returns >= 0 ? 'text-emerald-600' : 'text-red-600'
                       }`}
                     >
-                      {formatCurrency(item.returns, currency)}
+                      {format(item.returns)}
                     </td>
                     <td className="px-4 py-2 text-right">
                       <div className="flex justify-end gap-2">
@@ -589,18 +589,18 @@ function KindSection({ config, items, currency, onAdd, onEdit, onDelete }) {
                       item.returns >= 0 ? 'text-emerald-600' : 'text-red-600'
                     }`}
                   >
-                    {formatCurrency(item.returns, currency)}
+                    {format(item.returns)}
                     <div className="text-xs font-normal text-slate-400">returns</div>
                   </div>
                 </div>
                 <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-600">
                   <div>
                     <span className="text-slate-400">Invested </span>
-                    <span className="tabular-nums">{formatCurrency(item.invested, currency)}</span>
+                    <span className="tabular-nums">{format(item.invested)}</span>
                   </div>
                   <div className="text-right">
                     <span className="text-slate-400">Value </span>
-                    <span className="tabular-nums">{formatCurrency(item.currentValue, currency)}</span>
+                    <span className="tabular-nums">{format(item.currentValue)}</span>
                   </div>
                 </div>
                 <div className="mt-3 flex gap-2 border-t border-slate-100 pt-2">

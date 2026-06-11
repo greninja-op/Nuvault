@@ -28,7 +28,7 @@ const EMPTY_FORM = {
  *   DELETE /investments/:id
  */
 export default function Investments() {
-  const { displayCurrency } = useDisplayCurrency();
+  const { displayCurrency, format } = useDisplayCurrency();
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -176,15 +176,15 @@ export default function Investments() {
         <div className="grid gap-4 md:grid-cols-3">
           <SummaryCard
             label="Total invested"
-            value={formatCurrency(summary.totalInvested, displayCurrency)}
+            value={format(summary.totalInvested)}
           />
           <SummaryCard
             label="Current value"
-            value={formatCurrency(summary.totalCurrentValue, displayCurrency)}
+            value={format(summary.totalCurrentValue)}
           />
           <SummaryCard
             label="Total P&L"
-            value={formatCurrency(summary.totalPnL, displayCurrency)}
+            value={format(summary.totalPnL)}
             tone={summary.totalPnL >= 0 ? 'positive' : 'negative'}
           />
         </div>
@@ -220,16 +220,16 @@ export default function Investments() {
                   <td className="px-4 py-2 text-slate-600">{item.type}</td>
                   <td className="px-4 py-2 text-right">{item.quantity}</td>
                   <td className="px-4 py-2 text-right">
-                    {formatCurrency(item.buyPrice, displayCurrency)}
+                    {format(item.buyPrice)}
                   </td>
                   <td className="px-4 py-2 text-right">
-                    {formatCurrency(item.currentPrice, displayCurrency)}
+                    {format(item.currentPrice)}
                     <div className="text-xs text-slate-500">{item.priceSource}</div>
                   </td>
                   <td
                     className={`px-4 py-2 text-right ${item.gainLoss >= 0 ? 'text-emerald-600' : 'text-red-600'}`}
                   >
-                    {formatCurrency(item.gainLoss, displayCurrency)}
+                    {format(item.gainLoss)}
                     <div className="text-xs">
                       {Number(item.gainLossPercent).toFixed(2)}%
                     </div>

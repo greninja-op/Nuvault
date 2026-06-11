@@ -46,7 +46,7 @@ const EMPTY_FORM = {
  * bills and one-time settlement; the client simply re-fetches.
  */
 export default function Bills() {
-  const { displayCurrency } = useDisplayCurrency();
+  const { displayCurrency, format } = useDisplayCurrency();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -234,7 +234,7 @@ export default function Bills() {
                     <td className="px-4 py-2 text-slate-600">{bill.frequency}</td>
                     <td className="px-4 py-2 text-slate-600">{formatDate(bill.nextDueDate)}</td>
                     <td className="px-4 py-2 text-right tabular-nums">
-                      {formatCurrency(bill.amount, displayCurrency)}
+                      {format(bill.amount)}
                     </td>
                     <td className="px-4 py-2">
                       {bill.isPaid ? (
@@ -294,7 +294,7 @@ export default function Bills() {
                       <BillCard
                         key={bill._id}
                         bill={bill}
-                        currency={displayCurrency}
+                        format={format}
                         onPay={() => handlePay(bill)}
                         onEdit={() => openEdit(bill)}
                         onDelete={() => handleDelete(bill)}
@@ -414,7 +414,7 @@ export default function Bills() {
  * days-remaining, and a full-width Pay button plus Edit/Delete. All actions
  * are at least 44px tall for comfortable touch.
  */
-function BillCard({ bill, currency, onPay, onEdit, onDelete }) {
+function BillCard({ bill, format, onPay, onEdit, onDelete }) {
   const days = daysUntil(bill.nextDueDate);
   const paid = Boolean(bill.isPaid);
   const overdue = !paid && days < 0;
@@ -457,7 +457,7 @@ function BillCard({ bill, currency, onPay, onEdit, onDelete }) {
           </div>
         </div>
         <div className="shrink-0 text-right text-base font-semibold text-slate-900 tabular-nums whitespace-nowrap">
-          {formatCurrency(bill.amount, currency)}
+          {format(bill.amount)}
         </div>
       </div>
 

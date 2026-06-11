@@ -37,6 +37,7 @@ const billsRouter = require('./bills');
 const budgetsRouter = require('./budgets');
 const transactionsRouter = require('./transactions');
 const aiRouter = require('./ai');
+const fxRouter = require('./fx');
 /** @type {import('express').Router} */
 const publicRouter = express.Router();
 
@@ -93,6 +94,10 @@ protectedRouter.use('/bills', billsRouter);
 // the conversation is never persisted (R18.7) and Claude failures
 // surface as a uniform 503 without exposing the API key (R18.6).
 protectedRouter.use('/ai', aiRouter);
+
+// FX rate surface — returns the base(INR)→display currency rate so the
+// client can convert displayed amounts with one lookup per currency switch.
+protectedRouter.use('/fx', fxRouter);
 
 module.exports = {
   publicRouter,

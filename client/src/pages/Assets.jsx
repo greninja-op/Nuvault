@@ -23,7 +23,7 @@ const EMPTY_FORM = { name: '', type: 'cash', value: '', currency: 'INR', notes: 
  *   GET/POST/PUT/DELETE /assets — see assetController.
  */
 export default function Assets() {
-  const { displayCurrency } = useDisplayCurrency();
+  const { displayCurrency, format } = useDisplayCurrency();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -172,7 +172,7 @@ export default function Assets() {
                   <tr key={asset._id}>
                     <Td>{asset.name}</Td>
                     <Td className="text-slate-600">{asset.type}</Td>
-                    <Td align="right">{formatCurrency(asset.value, asset.currency || 'INR')}</Td>
+                    <Td align="right">{format(asset.value)}</Td>
                     <Td className="text-slate-600">{asset.currency || 'INR'}</Td>
                     <Td align="right">
                       <RowActions onEdit={() => openEdit(asset)} onDelete={() => handleDelete(asset)} />
@@ -196,7 +196,7 @@ export default function Assets() {
                     <div className="text-xs text-slate-500">{asset.type}</div>
                   </div>
                   <div className="shrink-0 text-right text-base font-semibold text-slate-900 tabular-nums whitespace-nowrap">
-                    {formatCurrency(asset.value, asset.currency || 'INR')}
+                    {format(asset.value)}
                     <div className="text-xs font-normal text-slate-500">
                       {asset.currency || 'INR'}
                     </div>

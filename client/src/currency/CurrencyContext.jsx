@@ -6,13 +6,19 @@ import {
   useMemo,
   useState,
 } from 'react';
+import apiClient from '../api/client';
+import { formatCurrency } from '../lib/format';
 
 /**
  * Display-currency context (Requirement 19.4).
  *
  * The user's chosen display currency is persisted in local storage under a
- * single key and applied to subsequent currency-aware requests (currently
- * the net worth endpoint). The default is `INR` per Requirement 19.1.
+ * single key. The default is `INR` per Requirement 19.1. Amounts in the app
+ * are stored in the base currency (INR); when the user picks another display
+ * currency this context fetches the INR→display rate once (from
+ * `GET /api/fx/rate`) and exposes a `format(amount)` helper that converts the
+ * base amount and formats it with the right symbol. One rate lookup per
+ * currency switch — not one per displayed value.
  *
  * Only the codes whitelisted in {@link SUPPORTED_CURRENCIES} are honored.
  * Any unknown stored value falls back to {@link DEFAULT_DISPLAY_CURRENCY}
@@ -87,13 +93,68 @@ export function CurrencyProvider({ children }) {
     setDisplayCurrencyState(next);
   }, []);
 
+  // The INR→displayCurrency conversion rate, plus whether the last lookup
+  // failed (so the UI can flag that amounts are shown in the base currency).
+  const [rate, setRate] = useState(1);
+  const [rateUnavailable, setRateUnavailable] = useState(false);
+
+  // Fetch the rate whenever the display currency changes. INR (the base)
+  // needs no lookup — rate is exactly 1.
+  useEffect(() => {
+    let cancelled = false;
+
+    if (displayCurrency === DEFAULT_DISPLAY_CURRENCY) {
+      setRate(1);
+      setRateUnavailable(false);
+      return undefined;
+    }
+
+    (async () => {
+      try {
+        const { data } = await apiClient.get('/fx/rate', {
+          params: { to: displayCurrency },
+        });
+        if (cancelled) return;
+        const r = Number(data && data.rate);
+        setRate(Number.isFinite(r) && r > 0 ? r : 1);
+        setRateUnavailable(Boolean(data && data.unavailable));
+      } catch {
+        if (cancelled) return;
+        // Network/auth failure → fall back to base amounts, flagged.
+        setRate(1);
+        setRateUnavailable(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [displayCurrency]);
+
+  /**
+   * Convert a base-currency (INR) amount to the active display currency and
+   * format it with the correct symbol. When the display currency is INR (or
+   * the rate is unavailable, rate=1) it formats the amount unchanged.
+   */
+  const format = useCallback(
+    (amount) => {
+      const n = Number(amount);
+      const converted = Number.isFinite(n) ? n * rate : amount;
+      return formatCurrency(converted, displayCurrency);
+    },
+    [rate, displayCurrency],
+  );
+
   const value = useMemo(
     () => ({
       displayCurrency,
       setDisplayCurrency,
       supportedCurrencies: SUPPORTED_CURRENCIES,
+      rate,
+      rateUnavailable,
+      format,
     }),
-    [displayCurrency, setDisplayCurrency],
+    [displayCurrency, setDisplayCurrency, rate, rateUnavailable, format],
   );
 
   return (

@@ -21,7 +21,7 @@ const EMPTY_FORM = {
  * endpoints: GET/POST/PUT/DELETE /liabilities — see liabilityController.
  */
 export default function Liabilities() {
-  const { displayCurrency } = useDisplayCurrency();
+  const { displayCurrency, format } = useDisplayCurrency();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -182,7 +182,7 @@ export default function Liabilities() {
                     <td className="px-4 py-2">{liability.name}</td>
                     <td className="px-4 py-2 text-slate-600">{liability.type}</td>
                     <td className="px-4 py-2 text-right tabular-nums">
-                      {formatCurrency(liability.amount, displayCurrency)}
+                      {format(liability.amount)}
                     </td>
                     <td className="px-4 py-2 text-right text-slate-600">
                       {liability.interestRate ?? '—'}
@@ -227,7 +227,7 @@ export default function Liabilities() {
                     </div>
                   </div>
                   <div className="shrink-0 text-right text-base font-semibold text-slate-900 tabular-nums whitespace-nowrap">
-                    {formatCurrency(liability.amount, displayCurrency)}
+                    {format(liability.amount)}
                   </div>
                 </div>
                 <div className="mt-3 flex gap-2 border-t border-slate-100 pt-2">
