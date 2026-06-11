@@ -3,3 +3,7 @@
 .env
 .env.local
 .DS_Store
+
+# Local DB backups (utility scripts: seed / backup / restore)
+server/data/*.json
+.backup
