@@ -129,15 +129,15 @@ export default function Assets() {
 
   return (
     <section className="space-y-4">
-      <header className="flex items-center justify-between">
+      <header className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Assets</h1>
+          <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Assets</h1>
           <p className="text-sm text-slate-600">Things you own.</p>
         </div>
         <button
           type="button"
           onClick={openCreate}
-          className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-700"
+          className="flex min-h-[44px] shrink-0 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-medium text-white shadow-sm hover:bg-indigo-700"
         >
           New asset
         </button>
@@ -154,32 +154,74 @@ export default function Assets() {
       ) : items.length === 0 ? (
         <p className="text-sm text-slate-500">No assets yet. Click "New asset" to add one.</p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
-          <table className="min-w-full divide-y divide-slate-200 text-sm">
-            <thead className="bg-slate-50">
-              <tr>
-                <Th>Name</Th>
-                <Th>Type</Th>
-                <Th align="right">Value</Th>
-                <Th>Currency</Th>
-                <Th align="right">Actions</Th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 bg-white">
-              {items.map((asset) => (
-                <tr key={asset._id}>
-                  <Td>{asset.name}</Td>
-                  <Td className="text-slate-600">{asset.type}</Td>
-                  <Td align="right">{formatCurrency(asset.value, asset.currency || 'INR')}</Td>
-                  <Td className="text-slate-600">{asset.currency || 'INR'}</Td>
-                  <Td align="right">
-                    <RowActions onEdit={() => openEdit(asset)} onDelete={() => handleDelete(asset)} />
-                  </Td>
+        <>
+          {/* Desktop / tablet: table */}
+          <div className="hidden overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm md:block">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-50">
+                <tr>
+                  <Th>Name</Th>
+                  <Th>Type</Th>
+                  <Th align="right">Value</Th>
+                  <Th>Currency</Th>
+                  <Th align="right">Actions</Th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {items.map((asset) => (
+                  <tr key={asset._id}>
+                    <Td>{asset.name}</Td>
+                    <Td className="text-slate-600">{asset.type}</Td>
+                    <Td align="right">{formatCurrency(asset.value, asset.currency || 'INR')}</Td>
+                    <Td className="text-slate-600">{asset.currency || 'INR'}</Td>
+                    <Td align="right">
+                      <RowActions onEdit={() => openEdit(asset)} onDelete={() => handleDelete(asset)} />
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile: card list */}
+          <ul className="space-y-3 md:hidden">
+            {items.map((asset) => (
+              <li
+                key={asset._id}
+                className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate font-medium text-slate-900">{asset.name}</div>
+                    <div className="text-xs text-slate-500">{asset.type}</div>
+                  </div>
+                  <div className="shrink-0 text-right text-base font-semibold text-slate-900 tabular-nums whitespace-nowrap">
+                    {formatCurrency(asset.value, asset.currency || 'INR')}
+                    <div className="text-xs font-normal text-slate-500">
+                      {asset.currency || 'INR'}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-3 flex gap-2 border-t border-slate-100 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => openEdit(asset)}
+                    className="flex min-h-[44px] flex-1 items-center justify-center rounded-md border border-slate-300 text-sm font-medium text-indigo-600 hover:bg-slate-50"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(asset)}
+                    className="flex min-h-[44px] flex-1 items-center justify-center rounded-md border border-slate-300 text-sm font-medium text-red-600 hover:bg-red-50"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
 
       <Modal

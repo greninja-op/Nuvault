@@ -51,10 +51,15 @@ export function ResultRow({ label, value, tone = 'neutral' }) {
   );
 }
 
-/** Card wrapper for the results breakdown. */
+/** Card wrapper for the results breakdown.
+ *
+ * When the card contains a chart (a child marked with the `chart` class via
+ * {@link SplitPie}/{@link SplitBar}), the whole card is hidden on small
+ * screens and shown from `md` up — per the mobile spec, charts appear only
+ * on tablet and above. Cards without a chart are unaffected. */
 export function ResultCard({ title, children }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm has-[.chart]:hidden md:has-[.chart]:block">
       {title && <h3 className="mb-2 text-sm font-semibold text-slate-900">{title}</h3>}
       {children}
     </div>
@@ -66,13 +71,13 @@ export function SplitPie({ data }) {
   const safe = data.filter((d) => Number(d.value) > 0);
   if (safe.length === 0) {
     return (
-      <p className="py-8 text-center text-sm text-slate-500">
+      <p className="chart py-8 text-center text-sm text-slate-500">
         Enter values to see the breakdown.
       </p>
     );
   }
   return (
-    <div className="h-64 w-full">
+    <div className="chart h-64 w-full">
       <ResponsiveContainer width="100%" height="100%">
         <PieChart>
           <Pie
@@ -98,7 +103,7 @@ export function SplitPie({ data }) {
 /** A bar chart, used where comparisons read more naturally than a pie. */
 export function SplitBar({ data, bars }) {
   return (
-    <div className="h-64 w-full">
+    <div className="chart h-64 w-full">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />

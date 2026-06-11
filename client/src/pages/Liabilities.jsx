@@ -136,15 +136,15 @@ export default function Liabilities() {
 
   return (
     <section className="space-y-4">
-      <header className="flex items-center justify-between">
+      <header className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Liabilities</h1>
+          <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Liabilities</h1>
           <p className="text-sm text-slate-600">Things you owe.</p>
         </div>
         <button
           type="button"
           onClick={openCreate}
-          className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-700"
+          className="flex min-h-[44px] shrink-0 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-medium text-white shadow-sm hover:bg-indigo-700"
         >
           New liability
         </button>
@@ -163,51 +163,93 @@ export default function Liabilities() {
           No liabilities yet. Click "New liability" to add one.
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
-          <table className="min-w-full divide-y divide-slate-200 text-sm">
-            <thead className="bg-slate-50">
-              <tr>
-                <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-500">Name</th>
-                <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-500">Type</th>
-                <th className="px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-slate-500">Amount</th>
-                <th className="px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-slate-500">Interest %</th>
-                <th className="px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-slate-500">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 bg-white">
-              {items.map((liability) => (
-                <tr key={liability._id}>
-                  <td className="px-4 py-2">{liability.name}</td>
-                  <td className="px-4 py-2 text-slate-600">{liability.type}</td>
-                  <td className="px-4 py-2 text-right">
-                    {formatCurrency(liability.amount, displayCurrency)}
-                  </td>
-                  <td className="px-4 py-2 text-right text-slate-600">
-                    {liability.interestRate ?? '—'}
-                  </td>
-                  <td className="px-4 py-2 text-right">
-                    <div className="flex justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => openEdit(liability)}
-                        className="text-xs font-medium text-indigo-600 hover:underline"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(liability)}
-                        className="text-xs font-medium text-red-600 hover:underline"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </td>
+        <>
+          {/* Desktop / tablet: table */}
+          <div className="hidden overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm md:block">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-500">Name</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-500">Type</th>
+                  <th className="px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-slate-500">Amount</th>
+                  <th className="px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-slate-500">Interest %</th>
+                  <th className="px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-slate-500">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {items.map((liability) => (
+                  <tr key={liability._id}>
+                    <td className="px-4 py-2">{liability.name}</td>
+                    <td className="px-4 py-2 text-slate-600">{liability.type}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">
+                      {formatCurrency(liability.amount, displayCurrency)}
+                    </td>
+                    <td className="px-4 py-2 text-right text-slate-600">
+                      {liability.interestRate ?? '—'}
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openEdit(liability)}
+                          className="text-xs font-medium text-indigo-600 hover:underline"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(liability)}
+                          className="text-xs font-medium text-red-600 hover:underline"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile: card list */}
+          <ul className="space-y-3 md:hidden">
+            {items.map((liability) => (
+              <li
+                key={liability._id}
+                className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate font-medium text-slate-900">{liability.name}</div>
+                    <div className="text-xs text-slate-500">
+                      {liability.type}
+                      {liability.interestRate != null && ` · ${liability.interestRate}%`}
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right text-base font-semibold text-slate-900 tabular-nums whitespace-nowrap">
+                    {formatCurrency(liability.amount, displayCurrency)}
+                  </div>
+                </div>
+                <div className="mt-3 flex gap-2 border-t border-slate-100 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => openEdit(liability)}
+                    className="flex min-h-[44px] flex-1 items-center justify-center rounded-md border border-slate-300 text-sm font-medium text-indigo-600 hover:bg-slate-50"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(liability)}
+                    className="flex min-h-[44px] flex-1 items-center justify-center rounded-md border border-slate-300 text-sm font-medium text-red-600 hover:bg-red-50"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
 
       <Modal

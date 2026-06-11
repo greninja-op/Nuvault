@@ -39,7 +39,8 @@ describe('Assets', () => {
     await waitFor(() => {
       expect(apiClient.get).toHaveBeenCalledWith('/assets');
     });
-    expect(await screen.findByText('Savings account')).toBeInTheDocument();
+    // Rendered in both the desktop table and the mobile card list.
+    expect((await screen.findAllByText('Savings account')).length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: /new asset/i })).toBeInTheDocument();
   });
 });

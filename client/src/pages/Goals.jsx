@@ -139,7 +139,7 @@ export default function Goals() {
     <section className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Goals</h1>
+          <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Goals</h1>
           <p className="text-sm text-slate-600">
             Track progress toward savings targets.
           </p>
@@ -147,7 +147,7 @@ export default function Goals() {
         <button
           type="button"
           onClick={openCreate}
-          className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-700"
+          className="flex min-h-[44px] w-full items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 sm:w-auto"
         >
           New goal
         </button>
@@ -164,25 +164,27 @@ export default function Goals() {
       ) : items.length === 0 ? (
         <p className="text-sm text-slate-500">No goals yet.</p>
       ) : (
-        <ul className="grid gap-3 md:grid-cols-2">
+        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {items.map((goal) => {
             const progress = Math.min(Number(goal.progress) || 0, 1);
             const percent = Math.round(progress * 100);
             return (
               <li
                 key={goal._id}
-                className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
+                className="flex flex-col rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <div className="font-medium text-slate-900">{goal.name}</div>
+                  <div className="min-w-0">
+                    <div className="truncate font-medium text-slate-900">{goal.name}</div>
                     {goal.category && (
-                      <div className="text-xs text-slate-500">{goal.category}</div>
+                      <div className="truncate text-xs text-slate-500">{goal.category}</div>
                     )}
                   </div>
-                  <div className="text-right text-sm text-slate-700">
-                    {formatCurrency(goal.savedAmount, displayCurrency)} /{' '}
-                    {formatCurrency(goal.targetAmount, displayCurrency)}
+                  <div className="shrink-0 text-right text-sm text-slate-700 tabular-nums">
+                    {formatCurrency(goal.savedAmount, displayCurrency)}
+                    <div className="text-xs text-slate-400">
+                      of {formatCurrency(goal.targetAmount, displayCurrency)}
+                    </div>
                   </div>
                 </div>
                 <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-100">
@@ -192,18 +194,18 @@ export default function Goals() {
                   />
                 </div>
                 <div className="mt-2 text-xs text-slate-500">{percent}% saved</div>
-                <div className="mt-3 flex justify-end gap-2">
+                <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3">
                   <button
                     type="button"
                     onClick={() => openContribute(goal)}
-                    className="text-xs font-medium text-indigo-600 hover:underline"
+                    className="flex min-h-[44px] flex-1 items-center justify-center rounded-md bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-700"
                   >
-                    Contribute
+                    Add money
                   </button>
                   <button
                     type="button"
                     onClick={() => handleDelete(goal)}
-                    className="text-xs font-medium text-red-600 hover:underline"
+                    className="flex min-h-[44px] items-center justify-center rounded-md border border-slate-300 px-4 text-sm font-medium text-red-600 hover:bg-red-50"
                   >
                     Delete
                   </button>

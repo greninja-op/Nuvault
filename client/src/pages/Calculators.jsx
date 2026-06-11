@@ -40,13 +40,33 @@ export default function Calculators() {
   return (
     <section className="space-y-6">
       <header>
-        <h1 className="text-2xl font-semibold text-slate-900">Finance Calculators</h1>
+        <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Finance Calculators</h1>
         <p className="text-sm text-slate-600">
           Plan investments, loans, and taxes with quick, interactive estimates.
         </p>
       </header>
 
-      <nav className="flex flex-wrap gap-2" aria-label="Calculator tabs">
+      {/* Mobile: dropdown selector */}
+      <div className="md:hidden">
+        <label htmlFor="calc-select" className="sr-only">
+          Choose a calculator
+        </label>
+        <select
+          id="calc-select"
+          value={active}
+          onChange={(e) => setActive(e.target.value)}
+          className="block min-h-[44px] w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+        >
+          {TABS.map((tab) => (
+            <option key={tab.id} value={tab.id}>
+              {tab.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Tablet+: button tabs */}
+      <nav className="hidden flex-wrap gap-2 md:flex" aria-label="Calculator tabs">
         {TABS.map((tab) => {
           const isActive = tab.id === active;
           return (

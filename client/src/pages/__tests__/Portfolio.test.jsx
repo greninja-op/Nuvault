@@ -54,7 +54,8 @@ describe('Portfolio', () => {
     expect(
       await screen.findByRole('heading', { name: 'Portfolio' }),
     ).toBeInTheDocument();
-    expect(await screen.findByText('Apple')).toBeInTheDocument();
+    // "Apple" renders in both the desktop table and the mobile card list.
+    expect((await screen.findAllByText('Apple')).length).toBeGreaterThan(0);
     expect(screen.getByText(/total value/i)).toBeInTheDocument();
     expect(screen.getByText(/total returns/i)).toBeInTheDocument();
     // The Stocks section heading is rendered for the stock item.

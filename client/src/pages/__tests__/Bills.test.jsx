@@ -43,9 +43,12 @@ describe('Bills', () => {
     await waitFor(() => {
       expect(apiClient.get).toHaveBeenCalledWith('/bills');
     });
-    expect(await screen.findByText('Internet')).toBeInTheDocument();
+    // Rendered in both the desktop table and the mobile card list.
+    expect((await screen.findAllByText('Internet')).length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole('button', { name: /^Pay$/ }));
+    // Both the table and the card expose a "Pay" control; clicking either
+    // issues the same PATCH. Use the first.
+    fireEvent.click(screen.getAllByRole('button', { name: /^Pay$/ })[0]);
 
     await waitFor(() => {
       expect(apiClient.patch).toHaveBeenCalledWith('/bills/b1/pay');
