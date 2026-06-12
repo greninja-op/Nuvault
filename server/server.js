@@ -18,10 +18,33 @@
  * `app.js` without booting the database or a network listener.
  */
 
+const dns = require('dns');
 const mongoose = require('mongoose');
 
 const { loadConfig } = require('./config/env');
 const { createApp } = require('./app');
+
+/**
+ * When an Atlas-style `mongodb+srv://` URI is in use, point Node's DNS
+ * resolver at Google + Cloudflare so SRV record lookups work even when
+ * the host's default resolver (often an ISP DNS) doesn't return SRV
+ * records. Local `mongodb://` URIs are left alone so dev environments
+ * that depend on internal DNS (corporate VPN, etc.) are unaffected.
+ *
+ * Node's mongodb driver uses `dns.resolveSrv`, which honors the result
+ * of `dns.setServers()` — so this single call fixes the
+ * `querySrv ECONNREFUSED` / SOA-only response failure mode.
+ *
+ * @param {string} mongoUri
+ * @returns {void}
+ */
+function applyAtlasDnsOverride(mongoUri) {
+  if (typeof mongoUri !== 'string' || !mongoUri.startsWith('mongodb+srv://')) {
+    return;
+  }
+  // Public DNS servers known to support SRV record queries.
+  dns.setServers(['8.8.8.8', '1.1.1.1', '8.8.4.4']);
+}
 
 /**
  * Boot the API server.
@@ -36,6 +59,10 @@ const { createApp } = require('./app');
 async function start(options = {}) {
   const config = options.config || loadConfig();
 
+  // For Atlas SRV URIs, route Node's DNS through public resolvers that
+  // support SRV records — bypasses ISP DNS that only returns SOA.
+  applyAtlasDnsOverride(config.mongoUri);
+
   // Connect to MongoDB before binding the port so the API never accepts
   // a request while the database is still unavailable.
   await mongoose.connect(config.mongoUri);
@@ -48,6 +75,15 @@ async function start(options = {}) {
       console.log(
         `[nuvault] API listening on port ${config.port} (${config.nodeEnv})`
       );
+      // Surface the actual cluster host so post-deploy logs confirm
+      // we're hitting the right database (R22.1 visibility).
+      const host = (() => {
+        try {
+          return new URL(config.mongoUri.replace('mongodb+srv://', 'https://').replace('mongodb://', 'https://')).hostname;
+        } catch (_e) { return 'unknown'; }
+      })();
+      // eslint-disable-next-line no-console
+      console.log(`[nuvault] MongoDB Connected: ${host}`);
       resolve(httpServer);
     });
   });
