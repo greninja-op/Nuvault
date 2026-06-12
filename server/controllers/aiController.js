@@ -60,13 +60,20 @@ const SNAPSHOT_HEADER = 'USER FINANCIAL SNAPSHOT:';
 const MS_PER_DAY = 86_400_000;
 
 /**
- * Models tried in order. The first is the preferred (richest) model.
- * Subsequent entries act as fallbacks when the primary returns 503
- * ("model overloaded") even after retries — a common condition on the
- * Gemini free tier. Both 2.5-flash and 2.0-flash are confirmed available
- * to the project's API key (see `models?key=...` listing).
+ * Models tried in order. Higher-quality models come first; the lighter
+ * `flash-lite` is last so its much larger daily quota stays in reserve
+ * for when the regular flash models have exhausted their (smaller) RPD
+ * — together they roughly stack to ~1,450 RPD per key on free tier
+ * (250 + 200 + 1,000), versus ~250 if we only used 2.5-flash.
+ *
+ * All three are confirmed available to the project's API key (see the
+ * `models?key=...` listing).
  */
-const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+const GEMINI_MODELS = [
+  'gemini-2.5-flash',
+  'gemini-2.0-flash',
+  'gemini-2.5-flash-lite',
+];
 
 /** Per-attempt overload retries before falling back to the next model. */
 const GEMINI_OVERLOAD_RETRIES = 2;
