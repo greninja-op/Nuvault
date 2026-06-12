@@ -52,28 +52,42 @@ const QUOTA_EXCEEDED_MESSAGE =
 const GEMINI_API_TIMEOUT_MS = 30_000;
 const GEMINI_BASE_URL =
   'https://generativelanguage.googleapis.com/v1beta/models';
-// Kept for backwards compatibility with existing tests; resolves the
-// canonical endpoint URL for the primary model.
-const GEMINI_ENDPOINT = `${GEMINI_BASE_URL}/${'gemini-2.5-flash'}:generateContent`;
 
 const SNAPSHOT_HEADER = 'USER FINANCIAL SNAPSHOT:';
 const MS_PER_DAY = 86_400_000;
 
 /**
- * Models tried in order. Higher-quality models come first; the lighter
- * `flash-lite` is last so its much larger daily quota stays in reserve
- * for when the regular flash models have exhausted their (smaller) RPD
- * — together they roughly stack to ~1,450 RPD per key on free tier
- * (250 + 200 + 1,000), versus ~250 if we only used 2.5-flash.
+ * Models tried in order. The first is both the highest-quality and
+ * highest-quota free-tier option, so it almost always carries traffic.
+ * Subsequent entries provide quality fallbacks for transient overloads
+ * and quota-stack headroom for heavy days. All confirmed available to
+ * the project's API key (probed via `models?key=...` + a live ping).
  *
- * All three are confirmed available to the project's API key (see the
- * `models?key=...` listing).
+ * Approximate free-tier daily quotas (RPD) per Google as of early 2026:
+ *   gemini-3-flash-preview     ~1,500
+ *   gemini-2.5-flash             ~250
+ *   gemini-2.0-flash             ~200
+ *   gemini-2.5-flash-lite      ~1,000
+ *
+ * Cumulative per key per day ≈ 2,950 RPD before the advisor is forced
+ * into a 503 — and the multi-key rotation scales that linearly.
+ *
+ * Note: the `-preview` suffix flags the model as still-in-preview at
+ * Google. They occasionally change/retire preview models; the rotation
+ * itself protects against that — if `3-flash-preview` ever returns 404
+ * we collapse to the next entry automatically.
  */
 const GEMINI_MODELS = [
+  'gemini-3-flash-preview',
   'gemini-2.5-flash',
   'gemini-2.0-flash',
   'gemini-2.5-flash-lite',
 ];
+
+// Canonical primary endpoint URL — derived from the first entry of
+// {@link GEMINI_MODELS}. Re-exported as a constant for tests and for
+// any future caller that needs the resolved URL without rebuilding it.
+const GEMINI_ENDPOINT = `${GEMINI_BASE_URL}/${GEMINI_MODELS[0]}:generateContent`;
 
 /** Per-attempt overload retries before falling back to the next model. */
 const GEMINI_OVERLOAD_RETRIES = 2;

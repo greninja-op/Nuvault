@@ -38,7 +38,10 @@ const {
   SNAPSHOT_HEADER,
   RECENT_TRANSACTIONS_LIMIT,
   GEMINI_ENDPOINT,
+  GEMINI_MODELS,
 } = require('./aiController');
+
+const NUM_MODELS = GEMINI_MODELS.length;
 
 /** A minimal valid Gemini success response. */
 function geminiOk(text) {
@@ -432,20 +435,18 @@ describe('POST /ai/chat — Gemini unavailable', () => {
     const quotaError = {
       response: { status: 429, data: { error: { message: 'quota exceeded' } } },
     };
-    // Three models × (1 quota response — no retries on quota): 3 mocked rejects.
-    axios.post
-      .mockRejectedValueOnce(quotaError)
-      .mockRejectedValueOnce(quotaError)
-      .mockRejectedValueOnce(quotaError);
+    // Every model × (1 quota response — no retries on quota).
+    for (let i = 0; i < NUM_MODELS; i += 1) {
+      axios.post.mockRejectedValueOnce(quotaError);
+    }
 
     const app = buildApp({ config: { geminiApiKey: 'test-key' } });
     const res = await authedChat(app, userA, { message: 'hello' });
 
     expect(res.status).toBe(503);
     expect(res.body.message).toMatch(/quota/i);
-    // Quota path must NOT retry the same model (would deepen the hole)
-    // — exactly one call per model.
-    expect(axios.post).toHaveBeenCalledTimes(3);
+    // Quota path must NOT retry the same model — exactly one call per model.
+    expect(axios.post).toHaveBeenCalledTimes(NUM_MODELS);
   });
 });
 
@@ -459,11 +460,11 @@ describe('POST /ai/chat — multi-key rotation', () => {
   };
 
   test('rotates to the next key when the first key has every model quota-exhausted', async () => {
-    // Key A: all three models 429 (3 calls), then key B succeeds on the
-    // first model (1 call) → 4 calls total.
-    axios.post.mockRejectedValueOnce(quotaError);
-    axios.post.mockRejectedValueOnce(quotaError);
-    axios.post.mockRejectedValueOnce(quotaError);
+    // Key A: every model 429, then key B succeeds on the first model
+    // → NUM_MODELS + 1 calls total.
+    for (let i = 0; i < NUM_MODELS; i += 1) {
+      axios.post.mockRejectedValueOnce(quotaError);
+    }
     axios.post.mockResolvedValueOnce(geminiOk('Recovered on the second key.'));
 
     const app = buildApp({ config: { geminiApiKey: 'key-A,key-B' } });
@@ -471,12 +472,12 @@ describe('POST /ai/chat — multi-key rotation', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ reply: 'Recovered on the second key.' });
-    expect(axios.post).toHaveBeenCalledTimes(4);
+    expect(axios.post).toHaveBeenCalledTimes(NUM_MODELS + 1);
 
-    expect(axios.post.mock.calls[0][0]).toContain('key-A');
-    expect(axios.post.mock.calls[1][0]).toContain('key-A');
-    expect(axios.post.mock.calls[2][0]).toContain('key-A');
-    expect(axios.post.mock.calls[3][0]).toContain('key-B');
+    for (let i = 0; i < NUM_MODELS; i += 1) {
+      expect(axios.post.mock.calls[i][0]).toContain('key-A');
+    }
+    expect(axios.post.mock.calls[NUM_MODELS][0]).toContain('key-B');
   });
 
   test('uses the fallback model on the same key when only the primary is rate-limited', async () => {
@@ -492,14 +493,16 @@ describe('POST /ai/chat — multi-key rotation', () => {
     expect(axios.post).toHaveBeenCalledTimes(2);
     expect(axios.post.mock.calls[0][0]).toContain('key-A');
     expect(axios.post.mock.calls[1][0]).toContain('key-A');
-    // Different model URLs.
-    expect(axios.post.mock.calls[0][0]).toContain('gemini-2.5-flash');
-    expect(axios.post.mock.calls[1][0]).toContain('gemini-2.0-flash');
+    // First call is the primary model, second is the immediate fallback.
+    // Match `${model}:` so e.g. 'gemini-2.5-flash' doesn't accidentally
+    // match 'gemini-2.5-flash-lite' in the URL.
+    expect(axios.post.mock.calls[0][0]).toContain(`${GEMINI_MODELS[0]}:`);
+    expect(axios.post.mock.calls[1][0]).toContain(`${GEMINI_MODELS[1]}:`);
   });
 
   test('returns a quota-specific 503 only after exhausting every key × model', async () => {
-    // 2 keys × 3 models = 6 quota responses.
-    for (let i = 0; i < 6; i += 1) {
+    // 2 keys × NUM_MODELS = 2 * NUM_MODELS quota responses.
+    for (let i = 0; i < 2 * NUM_MODELS; i += 1) {
       axios.post.mockRejectedValueOnce(quotaError);
     }
 
@@ -508,28 +511,27 @@ describe('POST /ai/chat — multi-key rotation', () => {
 
     expect(res.status).toBe(503);
     expect(res.body.message).toMatch(/quota/i);
-    expect(axios.post).toHaveBeenCalledTimes(6);
+    expect(axios.post).toHaveBeenCalledTimes(2 * NUM_MODELS);
   });
 
   test('blacked-out keys are skipped on subsequent requests within the window', async () => {
-    // First request: k1 fails on all 3 models with quota (3 calls), k2 succeeds (1 call) → 4.
-    axios.post
-      .mockRejectedValueOnce(quotaError)
-      .mockRejectedValueOnce(quotaError)
-      .mockRejectedValueOnce(quotaError)
-      .mockResolvedValueOnce(geminiOk('first'));
+    // First request: k1 fails on every model (NUM_MODELS calls), k2 succeeds (1 call).
+    for (let i = 0; i < NUM_MODELS; i += 1) {
+      axios.post.mockRejectedValueOnce(quotaError);
+    }
+    axios.post.mockResolvedValueOnce(geminiOk('first'));
 
     const app = buildApp({ config: { geminiApiKey: 'k1,k2' } });
     const r1 = await authedChat(app, userA, { message: 'hello' });
     expect(r1.status).toBe(200);
-    expect(axios.post).toHaveBeenCalledTimes(4);
+    expect(axios.post).toHaveBeenCalledTimes(NUM_MODELS + 1);
 
-    // Second request: k1 should be skipped (in blackout); k2 is tried directly (1 call).
+    // Second request: k1 should be skipped (blackout); k2 tried directly (1 call).
     axios.post.mockResolvedValueOnce(geminiOk('second'));
     const r2 = await authedChat(app, userA, { message: 'hello again' });
     expect(r2.status).toBe(200);
-    expect(axios.post).toHaveBeenCalledTimes(5); // +1, not +4
-    expect(axios.post.mock.calls[4][0]).toContain('k2');
+    expect(axios.post).toHaveBeenCalledTimes(NUM_MODELS + 2); // +1, not +(NUM_MODELS + 1)
+    expect(axios.post.mock.calls[NUM_MODELS + 1][0]).toContain('k2');
   });
 
   test('a single comma-less key string still works (backwards compat)', async () => {
