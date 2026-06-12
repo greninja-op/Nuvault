@@ -47,6 +47,8 @@ const RECENT_TRANSACTIONS_LIMIT = 30;
 const HISTORY_FETCH_LIMIT = 20; // turns returned to the client on load
 const HISTORY_CONTEXT_LIMIT = 10; // turns sent to Gemini for short-term memory
 const SERVICE_UNAVAILABLE_MESSAGE = 'AI service unavailable';
+const QUOTA_EXCEEDED_MESSAGE =
+  'AI free-tier quota exceeded. Try again in a minute, or check your Google AI Studio plan.';
 const GEMINI_API_TIMEOUT_MS = 30_000;
 const GEMINI_BASE_URL =
   'https://generativelanguage.googleapis.com/v1beta/models';
@@ -528,12 +530,19 @@ async function callGemini(apiKey, systemPrompt, contents, model = GEMINI_MODELS[
       'message=', apiMessage || (err && err.message) || 'unknown',
       'endpoint=', endpoint,
     );
-    // 503 (overloaded), 429 (rate-limit), network/timeouts → retryable.
-    const retryable =
-      status === 503 ||
-      status === 429 ||
-      status === undefined; // network error / timeout
-    return { ok: false, retryable };
+    // Classify the failure so the dispatcher knows what to do:
+    //   - 503 / network / timeout  → transient overload of THIS model.
+    //                                Retry same model with backoff.
+    //   - 429 (rate-limit / quota) → don't retry this model in the same
+    //                                window (it just deepens the hole), but
+    //                                DO try the fallback model since each
+    //                                model has its own quota allocation.
+    //   - other 4xx                → permanent. Stop entirely.
+    let kind;
+    if (status === 503 || status === undefined) kind = 'transient';
+    else if (status === 429) kind = 'quota';
+    else kind = 'permanent';
+    return { ok: false, kind, status, apiMessage };
   }
 
   try {
@@ -548,7 +557,7 @@ async function callGemini(apiKey, systemPrompt, contents, model = GEMINI_MODELS[
         response.data.candidates[0].finishReason,
       'promptFeedback=', JSON.stringify(response.data && response.data.promptFeedback),
     );
-    return { ok: false, retryable: false };
+    return { ok: false, kind: 'permanent' };
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error(
@@ -556,35 +565,51 @@ async function callGemini(apiKey, systemPrompt, contents, model = GEMINI_MODELS[
       err && err.message,
       'keys=', response && response.data && Object.keys(response.data),
     );
-    return { ok: false, retryable: false };
+    return { ok: false, kind: 'permanent' };
   }
 }
 
 /**
- * Try every configured model in order, with a small linear-backoff retry
- * on transient 503/429/network errors per model. This hides the Gemini
- * free-tier's frequent "model is overloaded" 503s from end users — the
- * primary model usually clears within 1-2s, and if it doesn't, the
- * lighter fallback model takes over.
+ * Try every configured model in order:
+ *   - 'transient' failure (503 / network / timeout) → retry same model
+ *     with linear backoff up to {@link GEMINI_OVERLOAD_RETRIES} times,
+ *     then fall through to the next model.
+ *   - 'quota'    failure (429)                       → skip same-model
+ *     retries (it just digs the hole deeper) and move straight to the
+ *     next model; each model has its own quota bucket.
+ *   - 'permanent' failure (other 4xx, malformed)     → stop immediately.
  *
- * Returns { ok, reply } in the same shape as the single-call helper so
- * the rest of the controller stays unchanged.
+ * Returns the same shape as the single-call helper, plus the last
+ * observed `kind` so the caller can surface a quota-specific message
+ * when every model is rate-limited.
  */
 async function callGeminiWithFallback(apiKey, systemPrompt, contents) {
+  let lastResult = { ok: false, kind: 'permanent' };
   for (const model of GEMINI_MODELS) {
+    let result;
+    if (lastResult.kind === 'permanent' && lastResult.status &&
+        lastResult.status !== 429 && lastResult.status !== 503) {
+      // Defense-in-depth: a hard permanent error from a previous model
+      // is still permanent for the next one (e.g. malformed request).
+      break;
+    }
+
     for (let attempt = 0; attempt <= GEMINI_OVERLOAD_RETRIES; attempt += 1) {
       // eslint-disable-next-line no-await-in-loop
-      const result = await callGemini(apiKey, systemPrompt, contents, model);
+      result = await callGemini(apiKey, systemPrompt, contents, model);
       if (result.ok) return result;
-      if (!result.retryable) return result; // permanent — don't try fallback
+      if (result.kind !== 'transient') break; // quota / permanent → stop retrying THIS model
       if (attempt < GEMINI_OVERLOAD_RETRIES) {
         // eslint-disable-next-line no-await-in-loop
         await delay(GEMINI_RETRY_DELAY_MS * (attempt + 1));
       }
     }
-    // Primary exhausted retries → fall through to next model.
+
+    lastResult = result;
+    if (result.kind === 'permanent') break; // don't try fallback on hard errors
+    // 'quota' or exhausted-transient → try next model
   }
-  return { ok: false };
+  return lastResult;
 }
 
 // ── Route handlers ──────────────────────────────────────────────────────────
@@ -615,7 +640,10 @@ async function chatHandler(req, res, next) {
       return;
     }
 
-    const err = new Error(SERVICE_UNAVAILABLE_MESSAGE);
+    // Quota exhaustion gets a clearer message so the user can act on it
+    // (wait a minute, or upgrade) rather than seeing a generic outage.
+    const isQuota = result && result.kind === 'quota';
+    const err = new Error(isQuota ? QUOTA_EXCEEDED_MESSAGE : SERVICE_UNAVAILABLE_MESSAGE);
     err.statusCode = 503;
     next(err);
   } catch (err) {
@@ -675,6 +703,7 @@ module.exports = {
   HISTORY_FETCH_LIMIT,
   HISTORY_CONTEXT_LIMIT,
   SERVICE_UNAVAILABLE_MESSAGE,
+  QUOTA_EXCEEDED_MESSAGE,
   SNAPSHOT_HEADER,
   GEMINI_ENDPOINT,
   GEMINI_BASE_URL,

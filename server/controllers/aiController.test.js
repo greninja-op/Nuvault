@@ -425,6 +425,24 @@ describe('POST /ai/chat — Gemini unavailable', () => {
     expect(res.status).toBe(503);
     expect(JSON.stringify(res.body)).not.toContain(apiKey);
   });
+
+  test('returns a quota-specific 503 message when Gemini returns 429 on every model', async () => {
+    const quotaError = {
+      response: { status: 429, data: { error: { message: 'quota exceeded' } } },
+    };
+    // Two models × (1 quota response — no retries on quota): 2 mocked rejects.
+    axios.post
+      .mockRejectedValueOnce(quotaError)
+      .mockRejectedValueOnce(quotaError);
+
+    const app = buildApp({ config: { geminiApiKey: 'test-key' } });
+    const res = await authedChat(app, userA, { message: 'hello' });
+
+    expect(res.status).toBe(503);
+    expect(res.body.message).toMatch(/quota/i);
+    // Quota path must NOT retry the same model (would deepen the hole).
+    expect(axios.post).toHaveBeenCalledTimes(2);
+  });
 });
 
 // =============================================================================
