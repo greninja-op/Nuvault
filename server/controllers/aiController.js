@@ -105,10 +105,36 @@ function rejectIfValidationErrors(req, res) {
 }
 
 /**
+ * Read GEMINI_API_KEY(s). Supports either a single key or a comma-
+ * separated list of keys for free-tier quota rotation:
+ *
+ *   GEMINI_API_KEY=key1
+ *   GEMINI_API_KEY=key1,key2,key3
+ *
+ * Lookup order, mirroring `resolveApiKey`:
+ *   1. req.app.get('config').geminiApiKey       (string, possibly comma-list)
+ *   2. process.env.GEMINI_API_KEY               (string, possibly comma-list)
+ *
+ * Returns an array of trimmed non-empty keys, or `[]` when nothing is
+ * configured (the dispatcher then short-circuits to a 503 cleanly).
+ */
+function resolveApiKeys(req) {
+  const raw = resolveApiKey(req);
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map((k) => k.trim())
+    .filter((k) => k.length > 0);
+}
+
+/**
  * Read GEMINI_API_KEY. Lookup order:
  *   1. req.app.get('config').geminiApiKey  (injected by tests)
  *   2. process.env.GEMINI_API_KEY
  * Returns null when absent; the 503 path activates automatically.
+ *
+ * Returns the raw value (which may be a single key or comma-list);
+ * call {@link resolveApiKeys} to get a usable list.
  */
 function resolveApiKey(req) {
   if (req && req.app && typeof req.app.get === 'function') {
@@ -122,6 +148,41 @@ function resolveApiKey(req) {
     return fromEnv;
   }
   return null;
+}
+
+/**
+ * Per-key "exhausted until" cache. When a key returns 429 we record a
+ * blackout timestamp so subsequent requests don't immediately re-burn
+ * a call on a known-dead key. The window is short on purpose: if the
+ * key recovers (per-minute quota reset) we'll find out within a minute.
+ *
+ * Module-scoped Map keyed by the API key string. Tests reset it via
+ * {@link _resetKeyBlackouts} between cases.
+ *
+ * @type {Map<string, number>}
+ */
+const keyBlackouts = new Map();
+const KEY_BLACKOUT_MS = 60_000;
+
+/** Test-only helper: clear the per-key blackout cache. */
+function _resetKeyBlackouts() {
+  keyBlackouts.clear();
+}
+
+/** True when the key has a non-expired blackout entry. */
+function isKeyBlackedOut(key) {
+  const until = keyBlackouts.get(key);
+  if (!until) return false;
+  if (Date.now() >= until) {
+    keyBlackouts.delete(key);
+    return false;
+  }
+  return true;
+}
+
+/** Record that a key is exhausted; subsequent calls skip it for a minute. */
+function blackoutKey(key) {
+  keyBlackouts.set(key, Date.now() + KEY_BLACKOUT_MS);
 }
 
 function sumAssetValues(assets) {
@@ -570,44 +631,76 @@ async function callGemini(apiKey, systemPrompt, contents, model = GEMINI_MODELS[
 }
 
 /**
- * Try every configured model in order:
- *   - 'transient' failure (503 / network / timeout) → retry same model
- *     with linear backoff up to {@link GEMINI_OVERLOAD_RETRIES} times,
- *     then fall through to the next model.
- *   - 'quota'    failure (429)                       → skip same-model
- *     retries (it just digs the hole deeper) and move straight to the
- *     next model; each model has its own quota bucket.
- *   - 'permanent' failure (other 4xx, malformed)     → stop immediately.
+ * Try every configured key × model combination:
+ *
+ *   for each key (skipping any in a current blackout window):
+ *     for each model:
+ *       - 'transient' (503 / network / timeout) → retry same model with
+ *         linear backoff, then fall through to the next model.
+ *       - 'quota' (429)                          → don't retry the same
+ *         model in the same window, but try the next model on the same
+ *         key first — each Gemini model has its own quota counter, so
+ *         the fallback model may still be usable on the same key.
+ *       - 'permanent' (other 4xx, malformed)     → stop entirely.
+ *     if every model returned 'quota' for this key → blackout the key
+ *     for {@link KEY_BLACKOUT_MS} and move to the next key.
  *
  * Returns the same shape as the single-call helper, plus the last
  * observed `kind` so the caller can surface a quota-specific message
- * when every model is rate-limited.
+ * when every key is rate-limited.
  */
 async function callGeminiWithFallback(apiKey, systemPrompt, contents) {
+  // Backwards-compatible signature: a single key string is treated as a
+  // length-1 list. Callers using {@link resolveApiKeys} pass an array.
+  const keys = Array.isArray(apiKey)
+    ? apiKey
+    : (typeof apiKey === 'string' && apiKey.trim() !== '' ? [apiKey] : []);
+
+  if (keys.length === 0) {
+    // Match callGemini's behavior — log once and bail.
+    return callGemini(null, systemPrompt, contents, GEMINI_MODELS[0]);
+  }
+
   let lastResult = { ok: false, kind: 'permanent' };
-  for (const model of GEMINI_MODELS) {
-    let result;
-    if (lastResult.kind === 'permanent' && lastResult.status &&
-        lastResult.status !== 429 && lastResult.status !== 503) {
-      // Defense-in-depth: a hard permanent error from a previous model
-      // is still permanent for the next one (e.g. malformed request).
-      break;
+  for (const key of keys) {
+    if (isKeyBlackedOut(key)) {
+      // eslint-disable-next-line no-console
+      console.error('[ai] Skipping blacked-out key (quota window not yet reset).');
+      lastResult = { ok: false, kind: 'quota' };
+      continue;
     }
 
-    for (let attempt = 0; attempt <= GEMINI_OVERLOAD_RETRIES; attempt += 1) {
-      // eslint-disable-next-line no-await-in-loop
-      result = await callGemini(apiKey, systemPrompt, contents, model);
-      if (result.ok) return result;
-      if (result.kind !== 'transient') break; // quota / permanent → stop retrying THIS model
-      if (attempt < GEMINI_OVERLOAD_RETRIES) {
+    let allModelsQuota = true;
+
+    for (const model of GEMINI_MODELS) {
+      let result;
+      for (let attempt = 0; attempt <= GEMINI_OVERLOAD_RETRIES; attempt += 1) {
         // eslint-disable-next-line no-await-in-loop
-        await delay(GEMINI_RETRY_DELAY_MS * (attempt + 1));
+        result = await callGemini(key, systemPrompt, contents, model);
+        if (result.ok) return result;
+        if (result.kind !== 'transient') break;
+        if (attempt < GEMINI_OVERLOAD_RETRIES) {
+          // eslint-disable-next-line no-await-in-loop
+          await delay(GEMINI_RETRY_DELAY_MS * (attempt + 1));
+        }
       }
+
+      lastResult = result;
+
+      if (result.kind === 'permanent') {
+        return result; // hard error — no point trying anything else
+      }
+      if (result.kind !== 'quota') {
+        allModelsQuota = false; // transient exhausted — fall through anyway
+      }
+      // Continue to the next model: maybe the fallback model has quota left.
     }
 
-    lastResult = result;
-    if (result.kind === 'permanent') break; // don't try fallback on hard errors
-    // 'quota' or exhausted-transient → try next model
+    if (allModelsQuota) {
+      // Every model on this key returned 429 — the key really is out.
+      blackoutKey(key);
+    }
+    // Try the next key.
   }
   return lastResult;
 }
@@ -628,8 +721,8 @@ async function chatHandler(req, res, next) {
     const systemPrompt = buildSystemPrompt(snapshot, req);
     const contents = buildContents(priorTurns, userMessage);
 
-    const apiKey = resolveApiKey(req);
-    const result = await callGeminiWithFallback(apiKey, systemPrompt, contents);
+    const apiKeys = resolveApiKeys(req);
+    const result = await callGeminiWithFallback(apiKeys, systemPrompt, contents);
 
     if (result && result.ok === true) {
       // Persist both turns only on success.
@@ -690,6 +783,8 @@ module.exports = {
   buildSystemPrompt,
   buildContents,
   resolveApiKey,
+  resolveApiKeys,
+  _resetKeyBlackouts,
   sumAssetValues,
   sumLiabilityAmounts,
   callGemini,
@@ -710,4 +805,5 @@ module.exports = {
   GEMINI_MODELS,
   GEMINI_OVERLOAD_RETRIES,
   GEMINI_RETRY_DELAY_MS,
+  KEY_BLACKOUT_MS,
 };
