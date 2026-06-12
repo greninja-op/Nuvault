@@ -48,11 +48,29 @@ const HISTORY_FETCH_LIMIT = 20; // turns returned to the client on load
 const HISTORY_CONTEXT_LIMIT = 10; // turns sent to Gemini for short-term memory
 const SERVICE_UNAVAILABLE_MESSAGE = 'AI service unavailable';
 const GEMINI_API_TIMEOUT_MS = 30_000;
-const GEMINI_ENDPOINT =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+const GEMINI_BASE_URL =
+  'https://generativelanguage.googleapis.com/v1beta/models';
+// Kept for backwards compatibility with existing tests; resolves the
+// canonical endpoint URL for the primary model.
+const GEMINI_ENDPOINT = `${GEMINI_BASE_URL}/${'gemini-2.5-flash'}:generateContent`;
 
 const SNAPSHOT_HEADER = 'USER FINANCIAL SNAPSHOT:';
 const MS_PER_DAY = 86_400_000;
+
+/**
+ * Models tried in order. The first is the preferred (richest) model.
+ * Subsequent entries act as fallbacks when the primary returns 503
+ * ("model overloaded") even after retries — a common condition on the
+ * Gemini free tier. Both 2.5-flash and 2.0-flash are confirmed available
+ * to the project's API key (see `models?key=...` listing).
+ */
+const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+
+/** Per-attempt overload retries before falling back to the next model. */
+const GEMINI_OVERLOAD_RETRIES = 2;
+
+/** Linear backoff between overload retries (ms). */
+const GEMINI_RETRY_DELAY_MS = 1000;
 
 // ── Validation chain ─────────────────────────────────────────────────────────
 
@@ -450,15 +468,38 @@ function buildContents(historyTurns, userMessage) {
 }
 
 /**
- * Call Gemini and return { ok: true, reply } or { ok: false }.
- * Never throws for an "unavailable" condition; never echoes the API key.
+ * Sleep helper for inter-retry backoff.
+ *
+ * @param {number} ms
+ * @returns {Promise<void>}
  */
-async function callGemini(apiKey, systemPrompt, contents) {
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Call Gemini once for a specific model.
+ *
+ * Returns one of:
+ *   { ok: true, reply }            success
+ *   { ok: false, retryable: true } transient (503 overload, 429 rate-limit,
+ *                                  network/timeout) — caller may retry
+ *   { ok: false, retryable: false } permanent (4xx other than 429, malformed
+ *                                   response, missing key) — do not retry
+ *
+ * On every failure path, logs the underlying Gemini error to the server
+ * console (status + message) so 503s are debuggable from pm2 logs without
+ * ever exposing the API key (the URL containing the key is never logged).
+ */
+async function callGemini(apiKey, systemPrompt, contents, model = GEMINI_MODELS[0]) {
   if (!apiKey || typeof apiKey !== 'string' || apiKey.trim() === '') {
-    return { ok: false };
+    // eslint-disable-next-line no-console
+    console.error('[ai] Gemini call skipped: GEMINI_API_KEY missing or empty.');
+    return { ok: false, retryable: false };
   }
 
-  const url = `${GEMINI_ENDPOINT}?key=${apiKey}`;
+  const endpoint = `${GEMINI_BASE_URL}/${model}:generateContent`;
+  const url = `${endpoint}?key=${apiKey}`;
   const requestBody = {
     system_instruction: {
       parts: [{ text: systemPrompt }],
@@ -472,9 +513,27 @@ async function callGemini(apiKey, systemPrompt, contents) {
       timeout: GEMINI_API_TIMEOUT_MS,
       headers: { 'Content-Type': 'application/json' },
     });
-  } catch (_err) {
-    // Network error, timeout, non-2xx — all collapse to unavailable.
-    return { ok: false };
+  } catch (err) {
+    const status = err && err.response && err.response.status;
+    const data = err && err.response && err.response.data;
+    const apiMessage =
+      (data && data.error && data.error.message) ||
+      (typeof data === 'string' ? data : undefined);
+    // eslint-disable-next-line no-console
+    console.error(
+      '[ai] Gemini call failed:',
+      'model=', model,
+      'status=', status || 'n/a',
+      'code=', err && err.code,
+      'message=', apiMessage || (err && err.message) || 'unknown',
+      'endpoint=', endpoint,
+    );
+    // 503 (overloaded), 429 (rate-limit), network/timeouts → retryable.
+    const retryable =
+      status === 503 ||
+      status === 429 ||
+      status === undefined; // network error / timeout
+    return { ok: false, retryable };
   }
 
   try {
@@ -482,10 +541,50 @@ async function callGemini(apiKey, systemPrompt, contents) {
     if (typeof text === 'string' && text.trim().length > 0) {
       return { ok: true, reply: text.trim() };
     }
-    return { ok: false };
-  } catch (_err) {
-    return { ok: false };
+    // eslint-disable-next-line no-console
+    console.error(
+      '[ai] Gemini returned an empty/blocked candidate. finishReason=',
+      response.data && response.data.candidates && response.data.candidates[0] &&
+        response.data.candidates[0].finishReason,
+      'promptFeedback=', JSON.stringify(response.data && response.data.promptFeedback),
+    );
+    return { ok: false, retryable: false };
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(
+      '[ai] Gemini response had unexpected shape:',
+      err && err.message,
+      'keys=', response && response.data && Object.keys(response.data),
+    );
+    return { ok: false, retryable: false };
   }
+}
+
+/**
+ * Try every configured model in order, with a small linear-backoff retry
+ * on transient 503/429/network errors per model. This hides the Gemini
+ * free-tier's frequent "model is overloaded" 503s from end users — the
+ * primary model usually clears within 1-2s, and if it doesn't, the
+ * lighter fallback model takes over.
+ *
+ * Returns { ok, reply } in the same shape as the single-call helper so
+ * the rest of the controller stays unchanged.
+ */
+async function callGeminiWithFallback(apiKey, systemPrompt, contents) {
+  for (const model of GEMINI_MODELS) {
+    for (let attempt = 0; attempt <= GEMINI_OVERLOAD_RETRIES; attempt += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      const result = await callGemini(apiKey, systemPrompt, contents, model);
+      if (result.ok) return result;
+      if (!result.retryable) return result; // permanent — don't try fallback
+      if (attempt < GEMINI_OVERLOAD_RETRIES) {
+        // eslint-disable-next-line no-await-in-loop
+        await delay(GEMINI_RETRY_DELAY_MS * (attempt + 1));
+      }
+    }
+    // Primary exhausted retries → fall through to next model.
+  }
+  return { ok: false };
 }
 
 // ── Route handlers ──────────────────────────────────────────────────────────
@@ -505,7 +604,7 @@ async function chatHandler(req, res, next) {
     const contents = buildContents(priorTurns, userMessage);
 
     const apiKey = resolveApiKey(req);
-    const result = await callGemini(apiKey, systemPrompt, contents);
+    const result = await callGeminiWithFallback(apiKey, systemPrompt, contents);
 
     if (result && result.ok === true) {
       // Persist both turns only on success.
@@ -566,6 +665,7 @@ module.exports = {
   sumAssetValues,
   sumLiabilityAmounts,
   callGemini,
+  callGeminiWithFallback,
   firstNameOf,
   currencyOf,
 
@@ -577,4 +677,8 @@ module.exports = {
   SERVICE_UNAVAILABLE_MESSAGE,
   SNAPSHOT_HEADER,
   GEMINI_ENDPOINT,
+  GEMINI_BASE_URL,
+  GEMINI_MODELS,
+  GEMINI_OVERLOAD_RETRIES,
+  GEMINI_RETRY_DELAY_MS,
 };
