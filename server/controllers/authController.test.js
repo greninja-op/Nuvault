@@ -406,13 +406,73 @@ describe('POST /login — credential mismatch (R2.2, R2.3, Property 10)', () => 
       password: 'real-password',
     });
 
-    // R2.3 + Property 10: the responses must be byte-identical so the API
-    // does not reveal which factor (email or password) was wrong.
+    // R2.3: both failures return 401 with the same generic message.
     expect(wrongPwResponse.status).toBe(401);
     expect(unknownEmailResponse.status).toBe(401);
     expect(wrongPwResponse.body.message).toBe(INVALID_CREDENTIALS_MESSAGE);
     expect(unknownEmailResponse.body.message).toBe(INVALID_CREDENTIALS_MESSAGE);
-    expect(wrongPwResponse.body).toEqual(unknownEmailResponse.body);
+
+    // NOTE (Feature 6): the wrong-password response now ALSO carries
+    // `attemptsRemaining` (lockout UX), while the unknown-email response does
+    // not — so the two are intentionally no longer byte-identical. This is a
+    // deliberate trade-off that relaxes the former anti-enumeration property
+    // (Property 10) in favor of the lockout feedback the product requested.
+    expect(wrongPwResponse.body.attemptsRemaining).toBe(4);
+    expect(unknownEmailResponse.body.attemptsRemaining).toBeUndefined();
+  });
+});
+
+
+
+
+describe('POST /login — account lockout (Feature 1 + 6)', () => {
+  test('decrements attemptsRemaining each failure and locks after 5', async () => {
+    await registerUser({ email: 'lock@example.com', password: 'correct-horse-battery' });
+
+    const results = [];
+    for (let i = 0; i < 5; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      const r = await request
+        .post('/login')
+        .send({ email: 'lock@example.com', password: 'wrong-password' });
+      results.push(r);
+    }
+
+    // Attempts 1-4: 401 with decreasing remaining count.
+    expect(results[0].status).toBe(401);
+    expect(results[0].body.attemptsRemaining).toBe(4);
+    expect(results[1].body.attemptsRemaining).toBe(3);
+    expect(results[2].body.attemptsRemaining).toBe(2);
+    expect(results[3].body.attemptsRemaining).toBe(1);
+    // 5th failure triggers the lock; still a 401 but no attempts remain.
+    expect(results[4].status).toBe(401);
+    expect(results[4].body.attemptsRemaining).toBe(0);
+
+    // 6th attempt — even with the CORRECT password — is refused with 423.
+    const sixth = await request
+      .post('/login')
+      .send({ email: 'lock@example.com', password: 'correct-horse-battery' });
+    expect(sixth.status).toBe(423);
+    expect(sixth.body.message).toMatch(/locked/i);
+    expect(sixth.body.lockExpiresAt).toBeDefined();
+  });
+
+  test('a successful login resets the failed-attempt counter', async () => {
+    await registerUser({ email: 'reset@example.com', password: 'correct-horse-battery' });
+
+    await request.post('/login').send({ email: 'reset@example.com', password: 'nope' });
+    await request.post('/login').send({ email: 'reset@example.com', password: 'nope' });
+
+    const ok = await request
+      .post('/login')
+      .send({ email: 'reset@example.com', password: 'correct-horse-battery' });
+    expect(ok.status).toBe(200);
+
+    // Counter was reset → next wrong attempt starts again at 4 remaining.
+    const wrong = await request
+      .post('/login')
+      .send({ email: 'reset@example.com', password: 'nope' });
+    expect(wrong.body.attemptsRemaining).toBe(4);
   });
 });
 

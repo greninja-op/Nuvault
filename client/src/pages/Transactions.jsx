@@ -4,6 +4,7 @@ import Field, { inputClass } from '../components/Field';
 import Modal from '../components/Modal';
 import { useDisplayCurrency } from '../currency/CurrencyContext';
 import { extractError, formatCurrency, formatDate } from '../lib/format';
+import { sanitizeInput } from '../utils/sanitize';
 import TransactionsSkeleton from '../components/skeletons/TransactionsSkeleton';
 import EmptyState from '../components/EmptyState';
 
@@ -119,9 +120,9 @@ export default function Transactions() {
     try {
       const payload = {
         type: form.type,
-        category: form.category.trim(),
+        category: sanitizeInput(form.category.trim()),
         amount: Number(form.amount),
-        description: form.description,
+        description: sanitizeInput(form.description),
       };
       if (form.date) payload.date = form.date;
 

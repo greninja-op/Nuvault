@@ -46,6 +46,55 @@ describe('createApp', () => {
     expect(typeof app.use).toBe('function');
   });
 
+  // Feature 5 — HTTPS enforcement.
+  describe('HTTPS enforcement (production)', () => {
+    const PROD_CONFIG = Object.freeze({
+      clientOrigin: 'https://app.nuvault.test',
+      nodeEnv: 'production',
+    });
+
+    test('redirects plain-http requests to https for a real host', async () => {
+      const app = createApp({ config: PROD_CONFIG });
+      const res = await request(app)
+        .get('/api/anything')
+        .set('Host', 'nuvault-api.onrender.com')
+        .set('X-Forwarded-Proto', 'http')
+        .redirects(0);
+      expect(res.status).toBe(301);
+      expect(res.headers.location).toBe('https://nuvault-api.onrender.com/api/anything');
+    });
+
+    test('does NOT redirect when already https', async () => {
+      const app = createApp({ config: PROD_CONFIG });
+      const res = await request(app)
+        .get('/api/health-ish')
+        .set('Host', 'nuvault-api.onrender.com')
+        .set('X-Forwarded-Proto', 'https')
+        .redirects(0);
+      expect(res.status).not.toBe(301);
+    });
+
+    test('does NOT redirect loopback hosts (local prod build stays reachable)', async () => {
+      const app = createApp({ config: PROD_CONFIG });
+      const res = await request(app)
+        .get('/api/whatever')
+        .set('Host', 'localhost:5001')
+        .set('X-Forwarded-Proto', 'http')
+        .redirects(0);
+      expect(res.status).not.toBe(301);
+    });
+
+    test('test env does not redirect at all', async () => {
+      const app = createApp({ config: VALID_CONFIG });
+      const res = await request(app)
+        .get('/api/whatever')
+        .set('Host', 'nuvault-api.onrender.com')
+        .set('X-Forwarded-Proto', 'http')
+        .redirects(0);
+      expect(res.status).not.toBe(301);
+    });
+  });
+
   test('parses JSON request bodies (express.json wired)', async () => {
     const app = createApp({ config: VALID_CONFIG });
     publicRouter.post('/__test/echo', (req, res) => {

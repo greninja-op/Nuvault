@@ -22,8 +22,10 @@
  */
 
 const { body, validationResult } = require('express-validator');
+const jwt = require('jsonwebtoken');
 
 const User = require('../models/User');
+const BlacklistedToken = require('../models/BlacklistedToken');
 const generateToken = require('../utils/generateToken');
 
 /**
@@ -196,6 +198,23 @@ async function register(req, res, next) {
 const INVALID_CREDENTIALS_MESSAGE = 'Invalid credentials';
 
 /**
+ * Message returned (HTTP 423) when a login is attempted against a currently
+ * locked account (Feature 1).
+ *
+ * @type {string}
+ */
+const ACCOUNT_LOCKED_MESSAGE =
+  'Account temporarily locked due to too many failed attempts. Try again in 30 minutes.';
+
+/**
+ * Max failed attempts before lockout — mirrors the User model constant so the
+ * controller can compute `attemptsRemaining` for the response (Feature 6).
+ *
+ * @type {number}
+ */
+const MAX_LOGIN_ATTEMPTS = User.MAX_LOGIN_ATTEMPTS || 5;
+
+/**
  * Validation chain for `POST /api/auth/login`.
  *
  * The login validators are deliberately *narrower* than `registerValidators`:
@@ -287,15 +306,42 @@ async function login(req, res, next) {
     const user = await User.findOne({ email });
     if (!user) {
       // R2.2: unknown email returns the same generic message as a wrong
-      // password (below) so the two cases are indistinguishable.
+      // password (below). Note: no `attemptsRemaining` is attached here, so
+      // the unknown-email and wrong-password responses are no longer
+      // byte-identical once Feature 6 is enabled (see report).
       return res.status(401).json({ message: INVALID_CREDENTIALS_MESSAGE });
+    }
+
+    // Feature 1: refuse login while the account is locked (HTTP 423).
+    if (user.isLocked) {
+      return res.status(423).json({
+        message: ACCOUNT_LOCKED_MESSAGE,
+        lockExpiresAt: user.lockUntil,
+      });
     }
 
     const isMatch = await user.matchPassword(password);
     if (!isMatch) {
-      // R2.3: wrong password returns the same generic message used for the
-      // unknown-email case above (Property 10).
-      return res.status(401).json({ message: INVALID_CREDENTIALS_MESSAGE });
+      // Feature 1: record the failure (may trigger a lock on the 5th try).
+      await user.incrementLoginAttempts();
+
+      // Feature 6: tell the client how many tries remain before lockout.
+      // If this failure just locked the account, none remain.
+      const attemptsRemaining = user.isLocked
+        ? 0
+        : Math.max(0, MAX_LOGIN_ATTEMPTS - user.loginAttempts);
+
+      return res.status(401).json({
+        message: INVALID_CREDENTIALS_MESSAGE,
+        attemptsRemaining,
+      });
+    }
+
+    // Success: clear any accumulated failed-attempt / lock state.
+    if (user.loginAttempts !== 0 || user.lockUntil) {
+      user.loginAttempts = 0;
+      user.lockUntil = undefined;
+      await user.save();
     }
 
     const token = generateToken(user._id);
@@ -310,6 +356,58 @@ async function login(req, res, next) {
         email: user.email,
       },
     });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+/**
+ * `POST /api/auth/logout` handler (Feature 2).
+ *
+ * Records the caller's still-valid JWT in the blacklist so the auth
+ * middleware rejects it for the remainder of its lifetime. The token's `exp`
+ * claim (decoded, not re-verified — `protect` already verified it upstream)
+ * sets the blacklist entry's `expiresAt`, which the TTL index uses to
+ * auto-purge the row once the token would have expired anyway.
+ *
+ * Idempotent: a token already blacklisted (duplicate key) still yields 200.
+ *
+ * @param {import('express').Request} req
+ * @param {import('express').Response} res
+ * @param {import('express').NextFunction} next
+ * @returns {Promise<void>}
+ */
+async function logout(req, res, next) {
+  try {
+    const rawHeader =
+      typeof req.headers.authorization === 'string' ? req.headers.authorization.trim() : '';
+    const match = /^Bearer\s+(.+)$/i.exec(rawHeader);
+    const token = match ? match[1].trim() : '';
+
+    if (!token) {
+      // No token to invalidate — nothing to do, but logout is still a success
+      // from the client's perspective.
+      return res.status(200).json({ message: 'Logged out successfully' });
+    }
+
+    // Decode (not verify) to read the expiry. `protect` already verified the
+    // token before this handler runs.
+    const decoded = jwt.decode(token);
+    const expiresAt =
+      decoded && typeof decoded.exp === 'number'
+        ? new Date(decoded.exp * 1000)
+        : new Date(Date.now() + 24 * 60 * 60 * 1000); // fallback: 24h
+
+    try {
+      await BlacklistedToken.create({ token, expiresAt });
+    } catch (err) {
+      // Duplicate key = token already blacklisted; treat as success.
+      if (!(err && err.code === 11000)) {
+        throw err;
+      }
+    }
+
+    return res.status(200).json({ message: 'Logged out successfully' });
   } catch (err) {
     return next(err);
   }
@@ -373,6 +471,7 @@ module.exports = {
   registerValidators,
   login,
   loginValidators,
+  logout,
   getMe,
   // Re-exported for tests / route wiring documentation.
   NAME_MAX,
@@ -380,4 +479,6 @@ module.exports = {
   PASSWORD_MIN,
   PASSWORD_MAX,
   INVALID_CREDENTIALS_MESSAGE,
+  ACCOUNT_LOCKED_MESSAGE,
+  MAX_LOGIN_ATTEMPTS,
 };

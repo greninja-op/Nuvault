@@ -31,6 +31,7 @@
 const jwt = require('jsonwebtoken');
 
 const User = require('../models/User');
+const BlacklistedToken = require('../models/BlacklistedToken');
 
 /**
  * Generic "no/invalid identity" message. Used for absent tokens (R3.2,
@@ -50,6 +51,15 @@ const NOT_AUTHORIZED_MESSAGE = 'Not authorized';
  * @type {string}
  */
 const TOKEN_INVALID_MESSAGE = 'Token invalid';
+
+/**
+ * Message for a token that was valid but has been explicitly invalidated via
+ * logout (Feature 2). Distinct wording so the client can tell the difference
+ * between "your token is malformed/expired" and "you logged out".
+ *
+ * @type {string}
+ */
+const TOKEN_INVALIDATED_MESSAGE = 'Token has been invalidated';
 
 /**
  * Match the standard `Authorization: Bearer <token>` header form. The
@@ -116,6 +126,19 @@ async function protect(req, _res, next) {
     return next(buildUnauthorized(TOKEN_INVALID_MESSAGE));
   }
 
+  // 2b. Reject tokens that were invalidated via logout (Feature 2). Even a
+  // cryptographically valid, unexpired token must not be honored once it has
+  // been blacklisted. A transient DB error here is surfaced to the uniform
+  // error handler rather than silently allowing the request.
+  try {
+    const blacklisted = await BlacklistedToken.findOne({ token }).lean();
+    if (blacklisted) {
+      return next(buildUnauthorized(TOKEN_INVALIDATED_MESSAGE));
+    }
+  } catch (err) {
+    return next(err);
+  }
+
   // 3. Resolve the user. `select('-password')` keeps the bcrypt hash off
   // `req.user` so any subsequent middleware / controller / response
   // serializer that touches the user document cannot accidentally leak
@@ -153,3 +176,4 @@ module.exports = protect;
 module.exports.protect = protect;
 module.exports.NOT_AUTHORIZED_MESSAGE = NOT_AUTHORIZED_MESSAGE;
 module.exports.TOKEN_INVALID_MESSAGE = TOKEN_INVALID_MESSAGE;
+module.exports.TOKEN_INVALIDATED_MESSAGE = TOKEN_INVALIDATED_MESSAGE;

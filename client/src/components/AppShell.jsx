@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import apiClient from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import {
   SUPPORTED_CURRENCIES,
@@ -136,8 +137,16 @@ export default function AppShell() {
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
 
-  function handleLogout() {
+  async function handleLogout() {
     setMenuOpen(false);
+    // Feature 2: tell the server to blacklist this JWT before we drop it
+    // locally. Best-effort — even if the call fails (offline/expired), we
+    // still clear the client session and redirect.
+    try {
+      await apiClient.post('/auth/logout');
+    } catch {
+      /* ignore — proceed with local logout regardless */
+    }
     logout();
     navigate('/login', { replace: true });
   }

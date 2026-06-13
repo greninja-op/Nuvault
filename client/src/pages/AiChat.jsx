@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import apiClient from '../api/client';
 import { extractError } from '../lib/format';
+import { sanitizeInput } from '../utils/sanitize';
 import AiAdvisorSkeleton from '../components/skeletons/AiAdvisorSkeleton';
 
 /**
@@ -73,7 +74,7 @@ export default function AiChat() {
 
   async function send(text) {
     if (submitting) return;
-    const trimmed = text.trim();
+    const trimmed = sanitizeInput(text.trim());
     if (trimmed.length === 0 || trimmed.length > 4000) {
       setError('Message must be between 1 and 4000 characters.');
       return;

@@ -151,6 +151,14 @@ function buildHelmetMiddleware(config) {
   );
 
   return helmet({
+    // HSTS (Feature 5): force HTTPS for a year, include subdomains, and
+    // allow preload-list submission. Harmless over plain http in dev because
+    // browsers only honor HSTS on https responses.
+    hsts: {
+      maxAge: 31536000,
+      includeSubDomains: true,
+      preload: true,
+    },
     contentSecurityPolicy: {
       useDefaults: true,
       directives: {
@@ -246,6 +254,26 @@ function createApp({ config } = {}) {
   // Disable the X-Powered-By header before any other middleware runs so
   // it never leaks on responses produced by error paths either.
   app.disable('x-powered-by');
+
+  // Feature 5 — HTTPS enforcement (production only). Render terminates TLS
+  // at its edge and forwards the original scheme in `x-forwarded-proto`, so
+  // we check that header (not `req.secure`). Any plain-http request is
+  // 301-redirected to the https equivalent.
+  //
+  // Loopback hosts (localhost / 127.0.0.1) are always exempt so a locally-run
+  // production build stays reachable over plain http — there's no TLS on a
+  // dev machine, and a redirect there would make the app unreachable.
+  if (config.nodeEnv === 'production') {
+    app.set('trust proxy', 1);
+    app.use((req, res, next) => {
+      const host = String(req.headers.host || '');
+      const isLoopback = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(host);
+      if (!isLoopback && req.headers['x-forwarded-proto'] !== 'https') {
+        return res.redirect(301, `https://${req.headers.host}${req.url}`);
+      }
+      return next();
+    });
+  }
 
   // 1. CORS — admit only the configured client origin (R22.3).
   app.use(buildCorsMiddleware(config.clientOrigin));

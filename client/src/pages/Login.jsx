@@ -20,6 +20,8 @@ export default function Login() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [attemptsRemaining, setAttemptsRemaining] = useState(null);
+  const [lockExpiresAt, setLockExpiresAt] = useState(null);
 
   // If the user lands on /login while already authenticated, send them
   // straight to where they came from (or the dashboard).
@@ -48,6 +50,8 @@ export default function Login() {
     event.preventDefault();
     if (submitting) return;
     setError(null);
+    setAttemptsRemaining(null);
+    setLockExpiresAt(null);
     setSubmitting(true);
     try {
       const { data } = await apiClient.post('/auth/login', { email, password });
@@ -55,10 +59,27 @@ export default function Login() {
       const from = location.state?.from?.pathname || '/';
       navigate(from, { replace: true });
     } catch (err) {
-      setError(extractError(err, 'Unable to sign in'));
+      const resp = err?.response;
+      // Feature 6: surface lockout state from the structured API response.
+      if (resp?.status === 423) {
+        setLockExpiresAt(resp.data?.lockExpiresAt || null);
+      } else {
+        setError(extractError(err, 'Unable to sign in'));
+        if (typeof resp?.data?.attemptsRemaining === 'number') {
+          setAttemptsRemaining(resp.data.attemptsRemaining);
+        }
+      }
     } finally {
       setSubmitting(false);
     }
+  }
+
+  /** Human-friendly local time for the lock expiry, if known. */
+  function lockTimeText() {
+    if (!lockExpiresAt) return null;
+    const d = new Date(lockExpiresAt);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 
   return (
@@ -114,6 +135,20 @@ export default function Login() {
             className={inputClass}
           />
         </Field>
+
+        {/* Feature 6: lockout feedback below the password field. */}
+        {lockExpiresAt ? (
+          <p role="alert" className="text-sm font-medium text-red-600">
+            Account locked due to too many failed attempts.
+            {lockTimeText() ? ` Try again at ${lockTimeText()}.` : ' Try again later.'}
+          </p>
+        ) : attemptsRemaining !== null ? (
+          <p role="alert" className="text-sm font-medium text-red-600">
+            {attemptsRemaining === 0
+              ? 'Account locked due to too many failed attempts.'
+              : `${attemptsRemaining} attempt${attemptsRemaining === 1 ? '' : 's'} remaining before lockout.`}
+          </p>
+        ) : null}
 
         <button
           type="submit"

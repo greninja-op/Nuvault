@@ -4,6 +4,7 @@ import Field, { inputClass } from '../components/Field';
 import Modal from '../components/Modal';
 import { useDisplayCurrency } from '../currency/CurrencyContext';
 import { extractError, formatCurrency, formatDate } from '../lib/format';
+import { sanitizeInput } from '../utils/sanitize';
 import BillsSkeleton from '../components/skeletons/BillsSkeleton';
 import EmptyState from '../components/EmptyState';
 
@@ -125,11 +126,11 @@ export default function Bills() {
     setFormError(null);
     try {
       const payload = {
-        name: form.name.trim(),
+        name: sanitizeInput(form.name.trim()),
         amount: Number(form.amount),
         frequency: form.frequency,
         nextDueDate: form.nextDueDate,
-        category: form.category,
+        category: sanitizeInput(form.category),
         autoPay: form.autoPay,
         isPaid: form.isPaid,
       };

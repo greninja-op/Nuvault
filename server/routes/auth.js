@@ -29,6 +29,7 @@ const {
   registerValidators,
   login,
   loginValidators,
+  logout,
   getMe,
 } = require('../controllers/authController');
 
@@ -54,6 +55,7 @@ publicAuthRouter.post('/login', loginValidators, login);
 const protectedAuthRouter = express.Router();
 
 protectedAuthRouter.get('/me', getMe);
+protectedAuthRouter.post('/logout', logout);
 
 module.exports = {
   publicAuthRouter,

@@ -4,6 +4,7 @@ import Field, { inputClass } from '../components/Field';
 import Modal from '../components/Modal';
 import { useDisplayCurrency } from '../currency/CurrencyContext';
 import { extractError, formatCurrency } from '../lib/format';
+import { sanitizeInput } from '../utils/sanitize';
 import InvestmentsSkeleton from '../components/skeletons/InvestmentsSkeleton';
 import EmptyState from '../components/EmptyState';
 
@@ -112,11 +113,11 @@ export default function Investments() {
     try {
       const payload = {
         type: form.type,
-        symbol: form.symbol.trim(),
-        name: form.name.trim(),
+        symbol: sanitizeInput(form.symbol.trim()),
+        name: sanitizeInput(form.name.trim()),
         quantity: Number(form.quantity),
         buyPrice: Number(form.buyPrice),
-        notes: form.notes,
+        notes: sanitizeInput(form.notes),
       };
       if (form.currentPrice !== '') {
         const cp = Number(form.currentPrice);

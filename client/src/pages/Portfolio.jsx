@@ -12,6 +12,7 @@ import Field, { inputClass } from '../components/Field';
 import Modal from '../components/Modal';
 import { useDisplayCurrency } from '../currency/CurrencyContext';
 import { extractError, formatCurrency } from '../lib/format';
+import { sanitizeInput } from '../utils/sanitize';
 import PortfolioSkeleton from '../components/skeletons/PortfolioSkeleton';
 import EmptyState from '../components/EmptyState';
 
@@ -303,7 +304,9 @@ export default function Portfolio() {
         } else if (field.type === 'date') {
           if (raw) payload[field.key] = raw;
         } else {
-          payload[field.key] = typeof raw === 'string' ? raw.trim() : raw;
+          // Free-text (text fields like name/symbol/notes). Sanitize before
+          // sending; select/enum values use the branch above and are left as-is.
+          payload[field.key] = typeof raw === 'string' ? sanitizeInput(raw.trim()) : raw;
         }
       }
 

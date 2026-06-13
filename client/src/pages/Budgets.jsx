@@ -4,6 +4,7 @@ import Field, { inputClass } from '../components/Field';
 import Modal from '../components/Modal';
 import { useDisplayCurrency } from '../currency/CurrencyContext';
 import { extractError, formatCurrency } from '../lib/format';
+import { sanitizeInput } from '../utils/sanitize';
 import BudgetSkeleton from '../components/skeletons/BudgetSkeleton';
 import EmptyState from '../components/EmptyState';
 
@@ -105,7 +106,7 @@ export default function Budgets() {
     setFormError(null);
     try {
       const payload = {
-        category: form.category.trim(),
+        category: sanitizeInput(form.category.trim()),
         limit: Number(form.limit),
         month: form.month,
         year: form.year,

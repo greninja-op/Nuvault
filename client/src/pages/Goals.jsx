@@ -4,6 +4,7 @@ import Field, { inputClass } from '../components/Field';
 import Modal from '../components/Modal';
 import { useDisplayCurrency } from '../currency/CurrencyContext';
 import { extractError, formatCurrency } from '../lib/format';
+import { sanitizeInput } from '../utils/sanitize';
 import GoalsSkeleton from '../components/skeletons/GoalsSkeleton';
 import EmptyState from '../components/EmptyState';
 
@@ -84,11 +85,11 @@ export default function Goals() {
     setFormError(null);
     try {
       const payload = {
-        name: form.name.trim(),
+        name: sanitizeInput(form.name.trim()),
         targetAmount: Number(form.targetAmount),
       };
       if (form.targetDate) payload.targetDate = form.targetDate;
-      if (form.category) payload.category = form.category;
+      if (form.category) payload.category = sanitizeInput(form.category);
       await apiClient.post('/goals', payload);
       setCreateOpen(false);
       await load();
