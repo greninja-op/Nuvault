@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -76,6 +76,29 @@ export default function AppShell() {
   const { isMobile } = useWindowSize();
   const navigate = useNavigate();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [profile, setProfile] = useState(null);
+
+  // The auth context only holds the user object for the session in which the
+  // user logged in; after a reload only the token is hydrated (no profile is
+  // persisted in localStorage by design). Rehydrate name/email from /auth/me
+  // so the sidebar shows the real account instead of a placeholder.
+  useEffect(() => {
+    if (user) return undefined;
+    let cancelled = false;
+    apiClient
+      .get('/auth/me')
+      .then(({ data }) => {
+        if (!cancelled) setProfile(data);
+      })
+      .catch(() => {
+        /* ignore — fall back to placeholder display */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  const account = user || profile;
 
   async function handleLogout() {
     setDrawerOpen(false);
@@ -92,7 +115,7 @@ export default function AppShell() {
     <div style={{ minHeight: '100vh', background: 'var(--bg-base)', color: 'var(--text-primary)' }}>
       {!isMobile && (
         <DesktopSidebar
-          user={user}
+          user={account}
           displayCurrency={displayCurrency}
           setDisplayCurrency={setDisplayCurrency}
           onLogout={handleLogout}

@@ -13,7 +13,12 @@ export default function GoalsSkeleton() {
         {[0, 1, 2, 3].map((i) => (
           <li
             key={i}
-            className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
+            className="space-y-3 p-4"
+            style={{
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-lg)',
+            }}
           >
             <SkeletonText width="60%" />
             <SkeletonCard height="60px" />

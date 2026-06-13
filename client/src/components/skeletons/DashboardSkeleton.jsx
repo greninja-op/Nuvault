@@ -19,7 +19,12 @@ export default function DashboardSkeleton() {
         {[0, 1].map((col) => (
           <div
             key={col}
-            className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
+            className="space-y-3 p-4"
+            style={{
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-lg)',
+            }}
           >
             <SkeletonText width="8rem" />
             {[0, 1, 2, 3].map((row) => (

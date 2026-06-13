@@ -2,7 +2,14 @@ import { SkeletonCard, SkeletonText, SkeletonScreen } from '../SkeletonLoader';
 
 function BillCardSkeleton() {
   return (
-    <li className="space-y-3 rounded-lg border border-l-4 border-slate-200 bg-white p-3 shadow-sm">
+    <li
+      className="space-y-3 p-3"
+      style={{
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius-lg)',
+      }}
+    >
       <div className="flex items-center justify-between gap-3">
         <SkeletonText width="50%" />
         <SkeletonCard width="4rem" height="20px" />

@@ -14,7 +14,14 @@ export default function CalculatorsSkeleton() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <div className="space-y-5 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <div
+          className="space-y-5 p-5"
+          style={{
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-lg)',
+          }}
+        >
           {[0, 1, 2, 3].map((i) => (
             <SkeletonCard key={i} height="48px" />
           ))}

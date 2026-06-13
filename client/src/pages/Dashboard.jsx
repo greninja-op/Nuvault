@@ -63,8 +63,10 @@ export default function Dashboard() {
   return (
     <section className="space-y-6">
       <header>
-        <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Dashboard</h1>
-        <p className="text-sm text-slate-600">
+        <h1 className="text-xl font-semibold sm:text-2xl" style={{ color: 'var(--text-primary)' }}>
+          Dashboard
+        </h1>
+        <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
           Snapshot of your assets, liabilities, and net worth.
         </p>
       </header>
@@ -221,17 +223,35 @@ function BarPillTooltip({ active, payload }) {
 }
 
 function SummaryCard({ label, value, tone = 'neutral' }) {
-  const toneClass =
+  const valueColor =
     tone === 'positive'
-      ? 'text-emerald-600'
+      ? 'var(--green)'
       : tone === 'negative'
-        ? 'text-red-600'
-        : 'text-slate-900';
+        ? 'var(--red)'
+        : 'var(--text-primary)';
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
+    <div
+      style={{
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius-lg)',
+        padding: '20px',
+      }}
+    >
       <div
-        className={`mt-2 break-words text-xl font-semibold leading-tight tabular-nums sm:text-2xl ${toneClass}`}
+        style={{
+          color: 'var(--text-muted)',
+          fontSize: '11px',
+          fontWeight: 500,
+          textTransform: 'uppercase',
+          letterSpacing: '0.06em',
+        }}
+      >
+        {label}
+      </div>
+      <div
+        className="mt-2 break-words text-xl font-semibold leading-tight sm:text-2xl"
+        style={{ color: valueColor, fontVariantNumeric: 'tabular-nums' }}
       >
         {value}
       </div>

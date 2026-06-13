@@ -15,7 +15,14 @@ export default function TransactionsSkeleton() {
         ))}
       </div>
 
-      <div className="space-y-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+      <div
+        className="space-y-2 p-3"
+        style={{
+          background: 'var(--bg-surface)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-lg)',
+        }}
+      >
         {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
           <div key={i} className="flex items-center gap-3 py-2">
             <SkeletonCircle size={32} />

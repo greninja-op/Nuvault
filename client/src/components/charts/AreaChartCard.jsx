@@ -26,13 +26,15 @@ import useWindowSize from '../../hooks/useWindowSize';
  *   sparkline    decorative mini-chart: no axes/grid/tooltip, no pointer events
  */
 
-/** ₹ formatter with K / L / Cr suffixes. */
+/** ₹ formatter with K / L / Cr suffixes; handles negative values. */
 export function formatRupeeShort(v) {
   const n = Number(v || 0);
-  if (n >= 10000000) return `₹${(n / 10000000).toFixed(1)}Cr`;
-  if (n >= 100000) return `₹${(n / 100000).toFixed(1)}L`;
-  if (n >= 1000) return `₹${(n / 1000).toFixed(1)}K`;
-  return `₹${n}`;
+  const abs = Math.abs(n);
+  const sign = n < 0 ? '-' : '';
+  if (abs >= 10000000) return `${sign}₹${(abs / 10000000).toFixed(1)}Cr`;
+  if (abs >= 100000) return `${sign}₹${(abs / 100000).toFixed(1)}L`;
+  if (abs >= 1000) return `${sign}₹${(abs / 1000).toFixed(1)}K`;
+  return `${sign}₹${abs}`;
 }
 
 /** Small floating-pill tooltip showing just the value. */
@@ -84,6 +86,18 @@ export default function AreaChartCard({
   const gradId = `areaGrad-${useId().replace(/[:]/g, '')}`;
   const resolvedHeight = height ?? (sparkline ? 60 : isMobile ? 200 : 280);
 
+  // Detect an all-negative series (e.g. a net-debt net-worth history). When
+  // every value is negative we pad the Y domain so the line isn't pinned to
+  // the chart edge, and show an explanatory caption beneath the chart.
+  const numericValues = data
+    .map((d) => Number(d?.[dataKey]))
+    .filter((n) => Number.isFinite(n));
+  const allNegative =
+    !sparkline && numericValues.length > 0 && numericValues.every((n) => n < 0);
+  const yDomain = allNegative
+    ? [Math.min(...numericValues) * 1.02, Math.max(...numericValues) * 0.98]
+    : ['auto', 'auto'];
+
   const chart = (
     <div
       style={{
@@ -127,6 +141,7 @@ export default function AreaChartCard({
               tickLine={false}
               axisLine={false}
               width={isMobile ? 48 : 60}
+              domain={yDomain}
               tickFormatter={formatRupeeShort}
             />
           )}
@@ -148,7 +163,25 @@ export default function AreaChartCard({
     </div>
   );
 
-  if (!card) return chart;
+  const chartWithNote = (
+    <>
+      {chart}
+      {allNegative && (
+        <div
+          style={{
+            fontSize: 12,
+            color: 'var(--text-muted)',
+            textAlign: 'center',
+            marginTop: 8,
+          }}
+        >
+          Values shown are negative (net debt position)
+        </div>
+      )}
+    </>
+  );
+
+  if (!card) return chartWithNote;
 
   return (
     <div
@@ -170,7 +203,7 @@ export default function AreaChartCard({
           )}
         </div>
       )}
-      {chart}
+      {chartWithNote}
     </div>
   );
 }

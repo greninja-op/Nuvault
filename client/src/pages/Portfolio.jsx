@@ -340,8 +340,10 @@ export default function Portfolio() {
     <section className="space-y-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Portfolio</h1>
-          <p className="text-sm text-slate-600">
+          <h1 className="text-xl font-semibold sm:text-2xl" style={{ color: 'var(--text-primary)' }}>
+            Portfolio
+          </h1>
+          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
             Every holding in one place. Invested, value, and returns computed per request.
           </p>
         </div>

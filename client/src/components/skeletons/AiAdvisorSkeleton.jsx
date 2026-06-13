@@ -6,7 +6,14 @@ export default function AiAdvisorSkeleton() {
     <SkeletonScreen className="flex h-[calc(100dvh-11rem)] flex-col md:h-[70vh]">
       <SkeletonText width="10rem" className="mb-4 shrink-0" />
 
-      <div className="flex-1 space-y-4 overflow-hidden rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div
+        className="flex-1 space-y-4 overflow-hidden p-4"
+        style={{
+          background: 'var(--bg-surface)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-lg)',
+        }}
+      >
         <div className="flex justify-start">
           <SkeletonCard width="60%" height="48px" />
         </div>

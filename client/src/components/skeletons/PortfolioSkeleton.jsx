@@ -12,7 +12,14 @@ export default function PortfolioSkeleton() {
         ))}
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div
+        className="p-4"
+        style={{
+          background: 'var(--bg-surface)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-lg)',
+        }}
+      >
         <SkeletonText width="10rem" className="mb-3" />
         <SkeletonCard height="200px" />
       </div>
@@ -21,7 +28,12 @@ export default function PortfolioSkeleton() {
         {[0, 1, 2].map((section) => (
           <div
             key={section}
-            className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
+            className="space-y-3 p-4"
+            style={{
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-lg)',
+            }}
           >
             <SkeletonText width="8rem" />
             {[0, 1, 2].map((row) => (

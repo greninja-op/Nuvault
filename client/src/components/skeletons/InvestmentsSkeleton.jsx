@@ -15,7 +15,14 @@ export default function InvestmentsSkeleton() {
         ))}
       </div>
 
-      <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div
+        className="space-y-3 p-4"
+        style={{
+          background: 'var(--bg-surface)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-lg)',
+        }}
+      >
         <div className="flex gap-4">
           {[0, 1, 2, 3].map((i) => (
             <SkeletonText key={i} width="25%" />
