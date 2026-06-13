@@ -3,6 +3,9 @@ import apiClient from '../api/client';
 import Field, { inputClass } from '../components/Field';
 import Modal from '../components/Modal';
 import DonutChart from '../components/charts/DonutChart';
+import AreaChartCard from '../components/charts/AreaChartCard';
+import useSnapshots from '../hooks/useSnapshots';
+import useWindowSize from '../hooks/useWindowSize';
 import { useDisplayCurrency } from '../currency/CurrencyContext';
 import { extractError, formatCurrency } from '../lib/format';
 import { sanitizeInput } from '../utils/sanitize';
@@ -189,6 +192,7 @@ function formFromItem(config, item) {
 
 export default function Portfolio() {
   const { displayCurrency, format } = useDisplayCurrency();
+  const { isMobile } = useWindowSize();
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -216,6 +220,9 @@ export default function Portfolio() {
   useEffect(() => {
     load();
   }, []);
+
+  // After the page's own fetch effect so snapshots don't pre-empt it.
+  const { snapshots } = useSnapshots();
 
   const config = useMemo(
     () => KINDS.find((k) => k.kind === activeKind) ?? KINDS[0],
@@ -344,6 +351,17 @@ export default function Portfolio() {
         <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
           {error}
         </p>
+      )}
+
+      {snapshots.length >= 2 && (
+        <AreaChartCard
+          title="Portfolio Value"
+          subtitle="Last 30 days"
+          data={snapshots}
+          dataKey="netWorth"
+          xKey="label"
+          height={isMobile ? 200 : 260}
+        />
       )}
 
       {summary && (

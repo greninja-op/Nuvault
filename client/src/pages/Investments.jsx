@@ -7,6 +7,9 @@ import { extractError, formatCurrency } from '../lib/format';
 import { sanitizeInput } from '../utils/sanitize';
 import InvestmentsSkeleton from '../components/skeletons/InvestmentsSkeleton';
 import EmptyState from '../components/EmptyState';
+import AreaChartCard from '../components/charts/AreaChartCard';
+import useSnapshots from '../hooks/useSnapshots';
+import useWindowSize from '../hooks/useWindowSize';
 
 const TYPES = ['stock', 'crypto', 'mutual_fund', 'fd', 'other'];
 
@@ -32,6 +35,7 @@ const EMPTY_FORM = {
  */
 export default function Investments() {
   const { displayCurrency, format } = useDisplayCurrency();
+  const { isMobile } = useWindowSize();
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -58,6 +62,9 @@ export default function Investments() {
   useEffect(() => {
     load();
   }, []);
+
+  // After the page's own fetch effect so snapshots don't pre-empt it.
+  const { snapshots } = useSnapshots();
 
   function openCreate() {
     setEditing(null);
@@ -193,6 +200,17 @@ export default function Investments() {
             tone={summary.totalPnL >= 0 ? 'positive' : 'negative'}
           />
         </div>
+      )}
+
+      {snapshots.length >= 2 && (
+        <AreaChartCard
+          title="Portfolio Growth"
+          subtitle="Net worth over last 30 days"
+          data={snapshots}
+          dataKey="netWorth"
+          xKey="label"
+          height={isMobile ? 180 : 240}
+        />
       )}
 
       {loading ? (

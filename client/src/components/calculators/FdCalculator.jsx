@@ -8,6 +8,7 @@ import {
   inr,
 } from './shared';
 import { inputClass } from '../Field';
+import AreaChartCard from '../charts/AreaChartCard';
 
 const COMPOUNDING = {
   monthly: { label: 'Monthly', n: 12 },
@@ -31,6 +32,18 @@ export default function FdCalculator() {
     const t = Number(years) || 0;
     const A = P * Math.pow(1 + r / n, n * t);
     return { invested: P, maturity: A, interest: A - P };
+  }, [principal, rate, years, freq]);
+
+  const projection = useMemo(() => {
+    const P = Number(principal) || 0;
+    const r = (Number(rate) || 0) / 100;
+    const n = COMPOUNDING[freq].n;
+    const totalYears = Number(years) || 0;
+    const out = [];
+    for (let y = 1; y <= totalYears; y += 1) {
+      out.push({ label: `Yr ${y}`, value: P * Math.pow(1 + r / n, n * y) });
+    }
+    return out;
   }, [principal, rate, years, freq]);
 
   return (
@@ -95,6 +108,17 @@ export default function FdCalculator() {
               ]}
             />
           </ResultCard>
+          {projection.length >= 2 && (
+            <ResultCard title="Maturity growth">
+              <AreaChartCard
+                data={projection}
+                dataKey="value"
+                xKey="label"
+                height={220}
+                card={false}
+              />
+            </ResultCard>
+          )}
         </>
       }
     />

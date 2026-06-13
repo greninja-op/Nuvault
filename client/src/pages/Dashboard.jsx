@@ -1,8 +1,22 @@
 import { useEffect, useState } from 'react';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import apiClient from '../api/client';
 import { useDisplayCurrency } from '../currency/CurrencyContext';
 import { extractError, formatCurrency } from '../lib/format';
 import DashboardSkeleton from '../components/skeletons/DashboardSkeleton';
+import { SkeletonCard } from '../components/SkeletonLoader';
+import AreaChartCard, { formatRupeeShort } from '../components/charts/AreaChartCard';
+import useSnapshots from '../hooks/useSnapshots';
+import useWindowSize from '../hooks/useWindowSize';
 
 /**
  * Dashboard / net-worth view. Fetches `GET /networth?currency=...` whenever
@@ -11,6 +25,7 @@ import DashboardSkeleton from '../components/skeletons/DashboardSkeleton';
  */
 export default function Dashboard() {
   const { displayCurrency } = useDisplayCurrency();
+  const { isMobile } = useWindowSize();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -36,6 +51,10 @@ export default function Dashboard() {
       cancelled = true;
     };
   }, [displayCurrency]);
+
+  // Declared after the net-worth effect so the page's own request is issued
+  // first; snapshots are decorative and degrade gracefully when unavailable.
+  const { snapshots, loading: snapshotsLoading } = useSnapshots();
 
   const currency = data?.displayCurrency ?? displayCurrency;
 
@@ -77,6 +96,22 @@ export default function Dashboard() {
             />
           </div>
 
+          {/* Net-worth trend (last 30 days) — only with enough history */}
+          {snapshotsLoading ? (
+            <SkeletonCard height="200px" />
+          ) : snapshots.length >= 2 ? (
+            <AreaChartCard
+              title="Net Worth — Last 30 Days"
+              data={snapshots}
+              dataKey="netWorth"
+              xKey="label"
+              height={isMobile ? 200 : 260}
+            />
+          ) : null}
+
+          {/* Assets vs liabilities vs net worth — current standing */}
+          <NetWorthBar data={data} isMobile={isMobile} />
+
           {/* Breakdown panels: full width on mobile, 2-up on tablet+ */}
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
             <BreakdownList
@@ -97,6 +132,91 @@ export default function Dashboard() {
         </>
       )}
     </section>
+  );
+}
+
+function NetWorthBar({ data, isMobile }) {
+  if (!data) return null;
+  const netWorth = Number(data.netWorth) || 0;
+  const chartData = [
+    { name: 'Assets', value: Number(data.totalAssets) || 0, fill: '#22c55e' },
+    { name: 'Liabilities', value: Number(data.totalLiabilities) || 0, fill: '#ef4444' },
+    {
+      name: 'Net Worth',
+      value: Math.abs(netWorth),
+      fill: netWorth >= 0 ? '#7c6ee8' : '#ef4444',
+    },
+  ];
+  const hasData = chartData.some((d) => d.value > 0);
+  if (!hasData) return null;
+
+  return (
+    <div
+      style={{
+        background: 'var(--bg-surface)',
+        borderRadius: 'var(--radius-lg)',
+        border: '1px solid var(--border)',
+        padding: isMobile ? 12 : 16,
+        overflow: 'hidden',
+      }}
+    >
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
+          Assets vs Liabilities
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Current standing</div>
+      </div>
+      <div style={{ width: '100%', height: isMobile ? 200 : 260, overflow: 'hidden' }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={chartData} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
+            <CartesianGrid strokeDasharray="3 6" stroke="var(--chart-grid)" vertical={false} />
+            <XAxis
+              dataKey="name"
+              tick={{ fontSize: 11, fill: 'var(--text-muted)', fontFamily: 'Poppins' }}
+              tickLine={false}
+              axisLine={false}
+            />
+            <YAxis
+              tick={{ fontSize: 11, fill: 'var(--text-muted)', fontFamily: 'Poppins' }}
+              tickLine={false}
+              axisLine={false}
+              width={isMobile ? 48 : 60}
+              tickFormatter={formatRupeeShort}
+            />
+            <Tooltip content={<BarPillTooltip />} cursor={{ fill: 'var(--chart-grid)' }} />
+            <Bar
+              dataKey="value"
+              radius={[6, 6, 0, 0]}
+              maxBarSize={isMobile ? 28 : 40}
+            >
+              {chartData.map((entry) => (
+                <Cell key={entry.name} fill={entry.fill} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+function BarPillTooltip({ active, payload }) {
+  if (!active || !payload || payload.length === 0) return null;
+  return (
+    <div
+      style={{
+        background: 'var(--bg-elevated)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius-full)',
+        padding: '5px 12px',
+        font: '500 12px/1 Poppins, system-ui, sans-serif',
+        color: 'var(--text-primary)',
+        boxShadow: 'var(--shadow-md)',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {payload[0].payload.name}: {formatRupeeShort(payload[0].value)}
+    </div>
   );
 }
 

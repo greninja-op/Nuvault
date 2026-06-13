@@ -7,6 +7,8 @@ import { extractError, formatCurrency } from '../lib/format';
 import { sanitizeInput } from '../utils/sanitize';
 import BudgetSkeleton from '../components/skeletons/BudgetSkeleton';
 import EmptyState from '../components/EmptyState';
+import DonutChart from '../components/charts/DonutChart';
+import useWindowSize from '../hooks/useWindowSize';
 
 const MONTHS = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -28,6 +30,7 @@ const EMPTY_FORM = { category: '', limit: '', month: 1, year: new Date().getFull
  */
 export default function Budgets() {
   const { displayCurrency, format } = useDisplayCurrency();
+  const { isMobile } = useWindowSize();
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
@@ -145,6 +148,11 @@ export default function Budgets() {
 
   if (loading) return <BudgetSkeleton />;
 
+  const spendData = items
+    .filter((b) => Number(b.spent) > 0)
+    .map((b) => ({ name: b.category, value: Number(b.spent), amount: Number(b.spent) }));
+  const totalSpent = spendData.reduce((sum, d) => sum + d.value, 0);
+
   return (
     <section className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
@@ -187,6 +195,23 @@ export default function Budgets() {
         <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
           {error}
         </p>
+      )}
+
+      {spendData.length >= 2 && totalSpent > 0 && (
+        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
+            Spending by category
+          </h2>
+          <div className="mt-2">
+            <DonutChart
+              data={spendData}
+              centerValue={format(totalSpent)}
+              centerLabel="Spent"
+              height={isMobile ? 200 : 240}
+              valueFormatter={(n) => format(n)}
+            />
+          </div>
+        </div>
       )}
 
       {loading ? (

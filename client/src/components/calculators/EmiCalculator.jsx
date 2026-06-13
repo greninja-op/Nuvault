@@ -7,6 +7,7 @@ import {
   SplitPie,
   inr,
 } from './shared';
+import AreaChartCard from '../charts/AreaChartCard';
 
 /**
  * Loan EMI calculator.
@@ -36,6 +37,26 @@ export default function EmiCalculator() {
       totalInterest: payment - P,
       totalPayment: payment,
     };
+  }, [loan, rate, months]);
+
+  const projection = useMemo(() => {
+    const P = Number(loan) || 0;
+    const r = (Number(rate) || 0) / 12 / 100;
+    const n = Number(months) || 0;
+    if (n === 0) return [];
+    const monthlyEmi = r === 0 ? P / n : (P * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
+    const out = [{ label: 'Start', value: P }];
+    // Sample the outstanding balance at up to ~12 evenly spaced points.
+    const stepCount = Math.min(12, n);
+    for (let s = 1; s <= stepCount; s += 1) {
+      const k = Math.round((n * s) / stepCount);
+      const balance =
+        r === 0
+          ? Math.max(P - monthlyEmi * k, 0)
+          : Math.max(P * Math.pow(1 + r, k) - monthlyEmi * ((Math.pow(1 + r, k) - 1) / r), 0);
+      out.push({ label: `M${k}`, value: balance });
+    }
+    return out;
   }, [loan, rate, months]);
 
   return (
@@ -87,6 +108,18 @@ export default function EmiCalculator() {
               ]}
             />
           </ResultCard>
+          {projection.length >= 2 && (
+            <ResultCard title="Outstanding balance">
+              <AreaChartCard
+                data={projection}
+                dataKey="value"
+                xKey="label"
+                height={220}
+                color="#ef4444"
+                card={false}
+              />
+            </ResultCard>
+          )}
         </>
       }
     />

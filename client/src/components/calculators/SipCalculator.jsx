@@ -7,6 +7,7 @@ import {
   SplitPie,
   inr,
 } from './shared';
+import AreaChartCard from '../charts/AreaChartCard';
 
 /**
  * SIP (Systematic Investment Plan) calculator.
@@ -29,6 +30,20 @@ export default function SipCalculator() {
       M = P * (((Math.pow(1 + r, n) - 1) / r) * (1 + r));
     }
     return { invested: investedAmt, maturity: M, returns: M - investedAmt };
+  }, [monthly, rate, years]);
+
+  const projection = useMemo(() => {
+    const P = Number(monthly) || 0;
+    const r = (Number(rate) || 0) / 12 / 100;
+    const totalYears = Number(years) || 0;
+    const out = [];
+    for (let y = 1; y <= totalYears; y += 1) {
+      const months = y * 12;
+      const value =
+        r === 0 ? P * months : P * (((Math.pow(1 + r, months) - 1) / r) * (1 + r));
+      out.push({ label: `Yr ${y}`, value });
+    }
+    return out;
   }, [monthly, rate, years]);
 
   return (
@@ -79,6 +94,17 @@ export default function SipCalculator() {
               ]}
             />
           </ResultCard>
+          {projection.length >= 2 && (
+            <ResultCard title="Projected growth">
+              <AreaChartCard
+                data={projection}
+                dataKey="value"
+                xKey="label"
+                height={220}
+                card={false}
+              />
+            </ResultCard>
+          )}
         </>
       }
     />
