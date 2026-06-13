@@ -20,7 +20,6 @@ export default function Login() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [sessionExpired, setSessionExpired] = useState(false);
-  const [attemptsRemaining, setAttemptsRemaining] = useState(null);
   const [lockExpiresAt, setLockExpiresAt] = useState(null);
 
   // If the user lands on /login while already authenticated, send them
@@ -50,7 +49,6 @@ export default function Login() {
     event.preventDefault();
     if (submitting) return;
     setError(null);
-    setAttemptsRemaining(null);
     setLockExpiresAt(null);
     setSubmitting(true);
     try {
@@ -60,14 +58,11 @@ export default function Login() {
       navigate(from, { replace: true });
     } catch (err) {
       const resp = err?.response;
-      // Feature 6: surface lockout state from the structured API response.
+      // Account-lockout state (Feature 1) is surfaced from the 423 response.
       if (resp?.status === 423) {
         setLockExpiresAt(resp.data?.lockExpiresAt || null);
       } else {
         setError(extractError(err, 'Unable to sign in'));
-        if (typeof resp?.data?.attemptsRemaining === 'number') {
-          setAttemptsRemaining(resp.data.attemptsRemaining);
-        }
       }
     } finally {
       setSubmitting(false);
@@ -136,17 +131,11 @@ export default function Login() {
           />
         </Field>
 
-        {/* Feature 6: lockout feedback below the password field. */}
+        {/* Lockout feedback below the password field (Feature 1). */}
         {lockExpiresAt ? (
           <p role="alert" className="text-sm font-medium text-red-600">
             Account locked due to too many failed attempts.
             {lockTimeText() ? ` Try again at ${lockTimeText()}.` : ' Try again later.'}
-          </p>
-        ) : attemptsRemaining !== null ? (
-          <p role="alert" className="text-sm font-medium text-red-600">
-            {attemptsRemaining === 0
-              ? 'Account locked due to too many failed attempts.'
-              : `${attemptsRemaining} attempt${attemptsRemaining === 1 ? '' : 's'} remaining before lockout.`}
           </p>
         ) : null}
 

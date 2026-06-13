@@ -323,18 +323,12 @@ async function login(req, res, next) {
     const isMatch = await user.matchPassword(password);
     if (!isMatch) {
       // Feature 1: record the failure (may trigger a lock on the 5th try).
+      // The lockout state is kept server-side only — the response is the same
+      // generic 401 used for an unknown email (below), so the API never
+      // reveals whether the email exists or how many attempts remain
+      // (anti-enumeration, R2.3 / Property 10).
       await user.incrementLoginAttempts();
-
-      // Feature 6: tell the client how many tries remain before lockout.
-      // If this failure just locked the account, none remain.
-      const attemptsRemaining = user.isLocked
-        ? 0
-        : Math.max(0, MAX_LOGIN_ATTEMPTS - user.loginAttempts);
-
-      return res.status(401).json({
-        message: INVALID_CREDENTIALS_MESSAGE,
-        attemptsRemaining,
-      });
+      return res.status(401).json({ message: INVALID_CREDENTIALS_MESSAGE });
     }
 
     // Success: clear any accumulated failed-attempt / lock state.
