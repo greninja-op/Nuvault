@@ -27,6 +27,7 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const BlacklistedToken = require('../models/BlacklistedToken');
 const generateToken = require('../utils/generateToken');
+const { recordSnapshot } = require('../utils/snapshotService');
 
 /**
  * Field bounds. These mirror the acceptance criteria in Requirement 1 and
@@ -339,6 +340,10 @@ async function login(req, res, next) {
     }
 
     const token = generateToken(user._id);
+
+    // Record a net-worth snapshot on login (fire-and-forget) so history
+    // accrues even for users who don't edit assets/liabilities often.
+    recordSnapshot(user._id);
 
     // R2.7: only id/name/email are returned. The password hash is never
     // included in the response body.

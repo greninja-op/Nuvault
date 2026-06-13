@@ -50,6 +50,7 @@ const {
   scopedUpdate,
   scopedDelete,
 } = require('../utils/ownership');
+const { recordSnapshot } = require('../utils/snapshotService');
 
 /**
  * Field bounds. Mirrored from the Asset schema and Requirement 6 so
@@ -200,6 +201,7 @@ async function createAsset(req, res, next) {
     }
     const created = await scopedCreate(Asset, req, req.body);
     res.status(201).json(toAssetResponse(created));
+    recordSnapshot(req.user._id); // fire-and-forget net-worth history
   } catch (err) {
     next(err);
   }
@@ -282,6 +284,7 @@ async function updateAsset(req, res, next) {
       return res.status(404).json({ message: MESSAGES.ASSET_NOT_FOUND });
     }
     res.status(200).json(toAssetResponse(updated));
+    recordSnapshot(req.user._id); // fire-and-forget net-worth history
   } catch (err) {
     next(err);
   }
@@ -311,6 +314,7 @@ async function deleteAsset(req, res, next) {
       id: String(deleted._id),
       message: MESSAGES.ASSET_DELETED,
     });
+    recordSnapshot(req.user._id); // fire-and-forget net-worth history
   } catch (err) {
     next(err);
   }

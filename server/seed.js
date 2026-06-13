@@ -34,6 +34,7 @@ const Investment = require('./models/Investment');
 const Goal = require('./models/Goal');
 const Bill = require('./models/Bill');
 const PortfolioItem = require('./models/PortfolioItem');
+const NetWorthSnapshot = require('./models/NetWorthSnapshot');
 
 const TX_CATEGORIES = {
   income: ['Salary'],
@@ -255,6 +256,49 @@ function buildPortfolioItems(userId) {
   ];
 }
 
+/**
+ * 30 daily net-worth snapshots ending today. The final (today's) snapshot
+ * matches the seeded asset/liability totals exactly; earlier days trend
+ * gently upward with light noise so the time-series chart looks alive.
+ */
+function buildSnapshots(userId) {
+  const assets = buildAssets(userId);
+  const liabilities = buildLiabilities(userId);
+  const totalAssets = money(assets.reduce((s, a) => s + a.value, 0));
+  const totalLiabilities = money(liabilities.reduce((s, l) => s + l.amount, 0));
+
+  const snaps = [];
+  for (let i = 29; i >= 0; i -= 1) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    d.setHours(12, 0, 0, 0);
+
+    let dayAssets;
+    let dayLiabilities;
+    if (i === 0) {
+      // Today matches the live totals exactly.
+      dayAssets = totalAssets;
+      dayLiabilities = totalLiabilities;
+    } else {
+      // Assets a bit lower further back (gentle growth) + small noise.
+      const drift = 1 - i * 0.004; // ~11.6% lower 29 days ago
+      const noise = 1 + (Math.random() - 0.5) * 0.01; // ±0.5%
+      dayAssets = money(totalAssets * drift * noise);
+      // Liabilities slightly higher in the past (debt paid down over time).
+      dayLiabilities = money(totalLiabilities * (1 + i * 0.0005));
+    }
+
+    snaps.push({
+      user: userId,
+      date: d,
+      assets: dayAssets,
+      liabilities: dayLiabilities,
+      netWorth: money(dayAssets - dayLiabilities),
+    });
+  }
+  return snaps;
+}
+
 async function clearAllCollections() {
   const collections = await mongoose.connection.db.collections();
   for (const col of collections) {
@@ -293,6 +337,7 @@ async function main() {
     ['goals', Goal, buildGoals(user._id)],
     ['bills', Bill, buildBills(user._id)],
     ['portfolioitems', PortfolioItem, buildPortfolioItems(user._id)],
+    ['networthsnapshots', NetWorthSnapshot, buildSnapshots(user._id)],
   ];
 
   for (const [label, Model, docs] of seeds) {

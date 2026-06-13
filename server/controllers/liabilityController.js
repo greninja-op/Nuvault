@@ -37,6 +37,7 @@ const {
   scopedUpdate,
   scopedDelete,
 } = require('../utils/ownership');
+const { recordSnapshot } = require('../utils/snapshotService');
 
 /**
  * Field bounds for liabilities.
@@ -196,6 +197,7 @@ async function createLiability(req, res, next) {
     const payload = pickLiabilityFields(req.body);
     const created = await scopedCreate(Liability, req, payload);
 
+    recordSnapshot(req.user._id); // fire-and-forget net-worth history
     return res.status(201).json(created);
   } catch (err) {
     return next(err);
@@ -280,6 +282,7 @@ async function updateLiability(req, res, next) {
     if (!updated) {
       return res.status(404).json({ message: 'Liability not found' });
     }
+    recordSnapshot(req.user._id); // fire-and-forget net-worth history
     return res.status(200).json(updated);
   } catch (err) {
     return next(err);
@@ -306,6 +309,7 @@ async function deleteLiability(req, res, next) {
     if (!removed) {
       return res.status(404).json({ message: 'Liability not found' });
     }
+    recordSnapshot(req.user._id); // fire-and-forget net-worth history
     return res.status(200).json({
       message: 'Liability deleted',
       id: String(removed._id),

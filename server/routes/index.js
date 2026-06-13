@@ -39,6 +39,7 @@ const budgetsRouter = require('./budgets');
 const transactionsRouter = require('./transactions');
 const aiRouter = require('./ai');
 const fxRouter = require('./fx');
+const snapshotsRouter = require('./snapshots');
 /** @type {import('express').Router} */
 const publicRouter = express.Router();
 
@@ -103,6 +104,12 @@ protectedRouter.use('/ai', aiRouter);
 // FX rate surface — returns the base(INR)→display currency rate so the
 // client can convert displayed amounts with one lookup per currency switch.
 protectedRouter.use('/fx', fxRouter);
+
+// Net-worth snapshot history — powers the time-series net-worth chart.
+// (Adapted from the spec's `app.use('/api/snapshots', ...)`: mounting under
+// protectedRouter keeps it behind the JWT `protect` middleware like every
+// other domain route, instead of an unauthenticated app-level mount.)
+protectedRouter.use('/snapshots', snapshotsRouter);
 
 module.exports = {
   publicRouter,
