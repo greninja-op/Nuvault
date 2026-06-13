@@ -391,10 +391,59 @@ async function buildSnapshot(req) {
 }
 
 /**
- * Render the Nuvault advisor system prompt: the behavioral rules followed by
- * a human-readable USER FINANCIAL SNAPSHOT built from real numbers.
+ * Decide which snapshot sections to include based on keywords in the user's
+ * message — so the model only sees data relevant to the question (cheaper,
+ * tighter answers). Order matters: a "summary" intent wins over everything.
+ *
+ * @param {string} message
+ * @returns {{ full?: boolean, monthly?: boolean, netWorth?: boolean,
+ *   budgets?: boolean, topCategories?: boolean, transactions?: boolean,
+ *   goals?: boolean, bills?: boolean, investments?: boolean }}
  */
-function buildSystemPrompt(snapshot, req) {
+function detectQuestionScope(message) {
+  const m = String(message || '').toLowerCase();
+  const has = (...words) => words.some((w) => m.includes(w));
+
+  if (has('summary', 'overall', 'health', 'everything')) {
+    return {
+      full: true,
+      monthly: true,
+      netWorth: true,
+      budgets: true,
+      topCategories: true,
+      transactions: true,
+      goals: true,
+      bills: true,
+      investments: true,
+    };
+  }
+  if (has('spend', 'budget', 'overspend', 'category')) {
+    return { budgets: true, topCategories: true, transactions: true };
+  }
+  if (has('goal', 'saving', 'target')) {
+    return { goals: true, monthly: true };
+  }
+  if (has('bill', 'due', 'pay', 'subscription')) {
+    return { bills: true };
+  }
+  if (has('invest', 'portfolio', 'stock', 'crypto', 'fund')) {
+    return { investments: true };
+  }
+  if (has('worth', 'asset', 'liabilit', 'debt', 'loan')) {
+    return { netWorth: true };
+  }
+  // Default: a light overview — net worth + this-month money + top spend.
+  return { monthly: true, netWorth: true, topCategories: true };
+}
+
+/**
+ * Render the Nuvault advisor system prompt: the behavioral rules followed by
+ * a human-readable USER FINANCIAL SNAPSHOT built from real numbers. Only the
+ * sections relevant to the question (per {@link detectQuestionScope}) are
+ * included.
+ */
+function buildSystemPrompt(snapshot, req, userMessage = '') {
+  const scope = detectQuestionScope(userMessage);
   const firstName = firstNameOf(req);
   const currency = currencyOf(req);
   const money = (n) =>
@@ -404,27 +453,36 @@ function buildSystemPrompt(snapshot, req) {
 
   const lines = [];
   lines.push(
-    `You are Nuvault, a personal AI financial advisor for ${firstName}. ` +
-      `You have direct access to ${firstName}'s real financial data, shown in the ` +
-      `snapshot below.`,
+    `You are Nuvault, ${firstName}'s personal finance assistant. You have ` +
+      `${firstName}'s real financial data in the snapshot below. Answer like a ` +
+      `helpful friend, not a report.`,
   );
   lines.push('');
-  lines.push('Follow these rules in every reply:');
-  lines.push(`- Always use the real numbers from the snapshot. Never invent or guess figures.`);
-  lines.push(`- Address the user by their first name (${firstName}).`);
-  lines.push(
-    `- Keep replies under 150 words unless the user explicitly asks for a full summary.`,
-  );
-  lines.push(`- End every reply with one specific, actionable tip.`);
-  lines.push(`- Never recommend specific stocks, mutual funds, or crypto coins to buy or sell.`);
-  lines.push(
-    `- For major financial decisions, tell the user to consult a qualified financial advisor.`,
-  );
-  lines.push(
-    `- If the snapshot does not contain the data needed to answer, say ` +
-      `"I don't have enough data on that yet" rather than guessing.`,
-  );
+  lines.push('STRICT RESPONSE RULES:');
+  lines.push('- Maximum 60 words for any normal answer.');
+  lines.push('- Plain text only. Never use markdown bold (**), headers (##), bullets, or dashes for lists.');
+  lines.push('- Never start with a greeting. Never say Hi, Hello, or the user\'s name at the start. Get straight to the answer.');
+  lines.push('- Use the real numbers from the snapshot. Never invent figures.');
+  lines.push('- Answer only the specific question asked. Include only numbers directly relevant to it.');
+  lines.push('- Never repeat the same number twice in one response.');
+  lines.push('- Never say "based on your data" or "as per your records" — just answer directly.');
+  lines.push('- Use the user\'s name at most once per conversation, never as a greeting.');
+  lines.push('- If the snapshot lacks the data to answer, say "I don\'t have enough data on that yet".');
   lines.push(`- All amounts are in ${currency}.`);
+  lines.push(
+    '- For investment or other major decisions, add one line: "Not registered financial ' +
+      'advice — consult an advisor." Only when genuinely relevant, not on every reply.',
+  );
+  lines.push('');
+  lines.push('RESPONSE SHAPE (follow exactly):');
+  lines.push('[Direct answer in 1-3 sentences using real numbers]');
+  lines.push('→ Tip: [one specific action, max 15 words]');
+  lines.push('');
+  lines.push(
+    'Exception: if the user explicitly asks for a full/overall summary, you may use up ' +
+      'to 120 words covering income, expenses, net worth, top goal progress, and one ' +
+      'recommendation — still plain text, still ending with one → Tip line.',
+  );
   lines.push('');
   lines.push(SNAPSHOT_HEADER);
   lines.push(`Name: ${firstName}`);
@@ -432,104 +490,122 @@ function buildSystemPrompt(snapshot, req) {
   lines.push('');
 
   // This month
-  lines.push(`This month (${monthName}):`);
-  lines.push(`  Income: ${money(snapshot.income)}`);
-  lines.push(`  Expenses: ${money(snapshot.expenses)}`);
-  lines.push(`  Savings: ${money(snapshot.savings)} (savings rate ${snapshot.savingsRate}%)`);
-  lines.push('');
+  if (scope.monthly) {
+    lines.push(`This month (${monthName}):`);
+    lines.push(`  Income: ${money(snapshot.income)}`);
+    lines.push(`  Expenses: ${money(snapshot.expenses)}`);
+    lines.push(`  Savings: ${money(snapshot.savings)} (savings rate ${snapshot.savingsRate}%)`);
+    lines.push('');
+  }
 
   // Net worth
-  lines.push('Net worth:');
-  lines.push(`  Assets: ${money(snapshot.totalAssets)}`);
-  lines.push(`  Liabilities: ${money(snapshot.totalLiabilities)}`);
-  lines.push(`  Net worth: ${money(snapshot.netWorth)}`);
-  lines.push('');
+  if (scope.netWorth) {
+    lines.push('Net worth:');
+    lines.push(`  Assets: ${money(snapshot.totalAssets)}`);
+    lines.push(`  Liabilities: ${money(snapshot.totalLiabilities)}`);
+    lines.push(`  Net worth: ${money(snapshot.netWorth)}`);
+    lines.push('');
+  }
 
   // Top spending categories
-  lines.push('Top spending categories this month:');
-  if (snapshot.topCategories.length === 0) {
-    lines.push('  (no expenses recorded this month)');
-  } else {
-    for (const c of snapshot.topCategories) {
-      lines.push(`  - ${c.category}: ${money(c.amount)}`);
+  if (scope.topCategories) {
+    lines.push('Top spending categories this month:');
+    if (snapshot.topCategories.length === 0) {
+      lines.push('  (no expenses recorded this month)');
+    } else {
+      for (const c of snapshot.topCategories) {
+        lines.push(`  ${c.category}: ${money(c.amount)}`);
+      }
     }
+    lines.push('');
   }
-  lines.push('');
 
   // Budgets
-  lines.push('Budgets this month:');
-  if (snapshot.budgets.length === 0) {
-    lines.push('  (no budgets set)');
-  } else {
-    for (const b of snapshot.budgets) {
-      const status = b.over ? `OVER by ${money(Math.abs(b.remaining))}` : `${money(b.remaining)} left`;
-      lines.push(
-        `  - ${b.category}: spent ${money(b.spent)} of ${money(b.limit)} ` +
-          `(${b.pctUsed}% used, ${status})`,
-      );
+  if (scope.budgets) {
+    lines.push('Budgets this month:');
+    if (snapshot.budgets.length === 0) {
+      lines.push('  (no budgets set)');
+    } else {
+      for (const b of snapshot.budgets) {
+        const status = b.over ? `OVER by ${money(Math.abs(b.remaining))}` : `${money(b.remaining)} left`;
+        lines.push(
+          `  ${b.category}: spent ${money(b.spent)} of ${money(b.limit)} ` +
+            `(${b.pctUsed}% used, ${status})`,
+        );
+      }
     }
+    lines.push('');
   }
-  lines.push('');
 
   // Goals
-  lines.push('Goals:');
-  if (snapshot.goals.length === 0) {
-    lines.push('  (no goals set)');
-  } else {
-    for (const g of snapshot.goals) {
-      let line = `  - ${g.name}: ${money(g.saved)} of ${money(g.target)} (${g.pct}%)`;
-      if (g.monthsRemaining !== null) {
-        line += `, ~${g.monthsRemaining} month(s) to target date`;
+  if (scope.goals) {
+    lines.push('Goals:');
+    if (snapshot.goals.length === 0) {
+      lines.push('  (no goals set)');
+    } else {
+      for (const g of snapshot.goals) {
+        let line = `  ${g.name}: ${money(g.saved)} of ${money(g.target)} (${g.pct}%)`;
+        if (g.monthsRemaining !== null) {
+          line += `, ~${g.monthsRemaining} month(s) to target date`;
+        }
+        lines.push(line);
       }
-      lines.push(line);
     }
+    lines.push('');
   }
-  lines.push('');
 
   // Bills
-  lines.push('Upcoming bills:');
-  if (snapshot.bills.length === 0) {
-    lines.push('  (no bills tracked)');
-  } else {
-    for (const b of snapshot.bills) {
-      const when =
-        b.daysUntilDue < 0
-          ? `overdue by ${Math.abs(b.daysUntilDue)} day(s)`
-          : `due in ${b.daysUntilDue} day(s)`;
-      const paid = b.paid ? ', paid' : '';
-      lines.push(`  - ${b.name}: ${money(b.amount)} (${when}${paid})`);
+  if (scope.bills) {
+    lines.push('Upcoming bills:');
+    if (snapshot.bills.length === 0) {
+      lines.push('  (no bills tracked)');
+    } else {
+      for (const b of snapshot.bills) {
+        const when =
+          b.daysUntilDue < 0
+            ? `overdue by ${Math.abs(b.daysUntilDue)} day(s)`
+            : `due in ${b.daysUntilDue} day(s)`;
+        const paid = b.paid ? ', paid' : '';
+        lines.push(`  ${b.name}: ${money(b.amount)} (${when}${paid})`);
+      }
     }
+    lines.push('');
   }
-  lines.push('');
 
   // Investments
-  const inv = snapshot.investments;
-  lines.push('Investments:');
-  if (inv.holdings.length === 0) {
-    lines.push('  (no investments tracked)');
-  } else {
-    lines.push(
-      `  Total invested: ${money(inv.totalInvested)}, current value: ` +
-        `${money(inv.totalCurrent)}, P&L: ${money(inv.pnl)}`,
-    );
-    for (const h of inv.holdings) {
+  if (scope.investments) {
+    const inv = snapshot.investments;
+    lines.push('Investments:');
+    if (inv.holdings.length === 0) {
+      lines.push('  (no investments tracked)');
+    } else {
       lines.push(
-        `  - ${h.name} (${h.type}): invested ${money(h.invested)}, ` +
-          `now ${money(h.currentValue)}, P&L ${money(h.pnl)}`,
+        `  Total invested: ${money(inv.totalInvested)}, current value: ` +
+          `${money(inv.totalCurrent)}, P&L: ${money(inv.pnl)}`,
       );
+      for (const h of inv.holdings) {
+        lines.push(
+          `  ${h.name} (${h.type}): invested ${money(h.invested)}, ` +
+            `now ${money(h.currentValue)}, P&L ${money(h.pnl)}`,
+        );
+      }
     }
+    lines.push('');
   }
-  lines.push('');
 
-  // Recent transactions
-  lines.push(`Last ${snapshot.recentTransactions.length} transactions (most recent first):`);
-  if (snapshot.recentTransactions.length === 0) {
-    lines.push('  (no transactions recorded)');
-  } else {
-    for (const t of snapshot.recentTransactions) {
-      const d = t.date ? new Date(t.date).toISOString().slice(0, 10) : 'n/a';
-      const sign = t.type === 'income' ? '+' : '-';
-      lines.push(`  - ${d} ${t.category}: ${sign}${money(t.amount)}`);
+  // Recent transactions — full summary gets the lot, spend queries get 20.
+  if (scope.transactions) {
+    const limit = scope.full ? snapshot.recentTransactions.length : 20;
+    const txns = snapshot.recentTransactions.slice(0, limit);
+    lines.push(`Last ${txns.length} transactions (most recent first):`);
+    if (txns.length === 0) {
+      lines.push('  (no transactions recorded)');
+    } else {
+      for (const t of txns) {
+        const d = t.date ? new Date(t.date).toISOString().slice(0, 10) : 'n/a';
+        const sign = t.type === 'income' ? '+' : '-';
+        lines.push(`  ${d} ${t.category}: ${sign}${money(t.amount)}`);
+      }
     }
   }
 
@@ -739,7 +815,7 @@ async function chatHandler(req, res, next) {
       scopedFind(ChatHistory, req).sort({ timestamp: 1 }).lean(),
     ]);
 
-    const systemPrompt = buildSystemPrompt(snapshot, req);
+    const systemPrompt = buildSystemPrompt(snapshot, req, userMessage);
     const contents = buildContents(priorTurns, userMessage);
 
     const apiKeys = resolveApiKeys(req);
@@ -802,6 +878,7 @@ module.exports = {
   // Internals exported for tests
   buildSnapshot,
   buildSystemPrompt,
+  detectQuestionScope,
   buildContents,
   resolveApiKey,
   resolveApiKeys,

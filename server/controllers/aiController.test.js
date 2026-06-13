@@ -34,6 +34,7 @@ const {
   getHistory,
   clearHistory,
   _resetKeyBlackouts,
+  detectQuestionScope,
   SERVICE_UNAVAILABLE_MESSAGE,
   SNAPSHOT_HEADER,
   RECENT_TRANSACTIONS_LIMIT,
@@ -42,6 +43,57 @@ const {
 } = require('./aiController');
 
 const NUM_MODELS = GEMINI_MODELS.length;
+
+// =============================================================================
+// detectQuestionScope — per-question data scoping (pure, no DB)
+// =============================================================================
+
+describe('detectQuestionScope', () => {
+  test('summary / overall / health / everything → full snapshot', () => {
+    for (const q of ['give me a summary', 'overall health', 'show everything']) {
+      expect(detectQuestionScope(q).full).toBe(true);
+    }
+  });
+
+  test('spend / budget / overspend / category → budgets + categories + transactions', () => {
+    const s = detectQuestionScope('where am I overspending?');
+    expect(s).toMatchObject({ budgets: true, topCategories: true, transactions: true });
+    expect(s.investments).toBeUndefined();
+    expect(s.bills).toBeUndefined();
+  });
+
+  test('goal / saving / target → goals + monthly', () => {
+    const s = detectQuestionScope('am I on track for my goals?');
+    expect(s).toMatchObject({ goals: true, monthly: true });
+    expect(s.bills).toBeUndefined();
+  });
+
+  test('bill / due / pay / subscription → bills only', () => {
+    const s = detectQuestionScope('what bills are due soon?');
+    expect(s.bills).toBe(true);
+    expect(s.investments).toBeUndefined();
+    expect(s.budgets).toBeUndefined();
+  });
+
+  test('invest / portfolio / stock / crypto / fund → investments only', () => {
+    const s = detectQuestionScope('how is my portfolio doing?');
+    expect(s.investments).toBe(true);
+    expect(s.bills).toBeUndefined();
+  });
+
+  test('worth / asset / liability / debt / loan → net worth only', () => {
+    const s = detectQuestionScope('what is my net worth?');
+    expect(s.netWorth).toBe(true);
+    expect(s.transactions).toBeUndefined();
+  });
+
+  test('default (no keywords) → monthly + net worth + top categories, no transactions', () => {
+    const s = detectQuestionScope('what should I do with extra money?');
+    expect(s).toMatchObject({ monthly: true, netWorth: true, topCategories: true });
+    expect(s.transactions).toBeUndefined();
+    expect(s.full).toBeUndefined();
+  });
+});
 
 /** A minimal valid Gemini success response. */
 function geminiOk(text) {
@@ -198,7 +250,7 @@ describe('POST /ai/chat — snapshot composition', () => {
     await Transaction.create({ user: userB, type: 'expense', category: 'foreign', amount: 7777 });
 
     const app = buildApp({ config: { geminiApiKey: 'test-key' } });
-    const res = await authedChat(app, userA, { message: '  How am I doing?  ' });
+    const res = await authedChat(app, userA, { message: '  give me a full summary  ' });
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ reply: 'Looking solid.' });
@@ -212,9 +264,9 @@ describe('POST /ai/chat — snapshot composition', () => {
     // The final content turn carries the trimmed user message.
     const last = body.contents[body.contents.length - 1];
     expect(last.role).toBe('user');
-    expect(last.parts[0].text).toBe('How am I doing?');
+    expect(last.parts[0].text).toBe('give me a full summary');
 
-    // The system prompt is formatted text containing the snapshot header,
+    // A full-summary request includes every section: the snapshot header,
     // the real net-worth figure, and the user's own transactions — but never
     // another user's data.
     const prompt = body.system_instruction.parts[0].text;
@@ -250,7 +302,7 @@ describe('POST /ai/chat — snapshot composition', () => {
   test('renders an empty snapshot gracefully when the user has no data', async () => {
     axios.post.mockResolvedValueOnce(geminiOk('no data yet'));
     const app = buildApp({ config: { geminiApiKey: 'test-key' } });
-    const res = await authedChat(app, userA, { message: 'hi' });
+    const res = await authedChat(app, userA, { message: 'give me a summary' });
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ reply: 'no data yet' });
