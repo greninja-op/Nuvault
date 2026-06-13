@@ -1,15 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import {
-  Cell,
-  Legend,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-} from 'recharts';
 import apiClient from '../api/client';
 import Field, { inputClass } from '../components/Field';
 import Modal from '../components/Modal';
+import DonutChart from '../components/charts/DonutChart';
 import { useDisplayCurrency } from '../currency/CurrencyContext';
 import { extractError, formatCurrency } from '../lib/format';
 import { sanitizeInput } from '../utils/sanitize';
@@ -376,28 +369,13 @@ export default function Portfolio() {
           <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
             Asset allocation
           </h2>
-          <div className="mt-2 h-72 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={pieData}
-                  dataKey="value"
-                  nameKey="name"
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={100}
-                  label={(entry) => `${entry.name} (${entry.percent}%)`}
-                >
-                  {pieData.map((entry, index) => (
-                    <Cell key={entry.name} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  formatter={(value) => format(value)}
-                />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
+          <div className="mt-2">
+            <DonutChart
+              data={pieData}
+              centerValue={format(summary.totalCurrentValue)}
+              centerLabel="Total"
+              valueFormatter={(n) => format(n)}
+            />
           </div>
         </div>
       )}

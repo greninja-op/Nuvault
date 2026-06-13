@@ -2,6 +2,61 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Design tokens ─────────────────────────────────────────────────────────
+ * Chart components reference these CSS variables (rather than hard-coded
+ * colors) so the whole charting layer can be re-themed in one place. They are
+ * mapped to Nuvault's current light theme here; a future `.dark` override can
+ * redefine them without touching any component.
+ */
+:root {
+  --bg-surface: #ffffff;
+  --bg-elevated: #ffffff;
+  --border: #e2e8f0; /* slate-200 */
+  --text-primary: #0f172a; /* slate-900 */
+  --text-secondary: #334155; /* slate-700 */
+  --text-muted: #64748b; /* slate-500 */
+  --radius-lg: 0.5rem;
+  --radius-full: 9999px;
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  /* Faint grid line that reads on light cards (the dark-theme spec uses a
+   * white alpha; on light we use a slate alpha of similar subtlety). */
+  --chart-grid: rgba(15, 23, 42, 0.06);
+}
+
+.dark {
+  --bg-surface: #0f172a;
+  --bg-elevated: #1e293b;
+  --border: #334155;
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+  --chart-grid: rgba(255, 255, 255, 0.05);
+}
+
+/* ── Recharts global styling ───────────────────────────────────────────────*/
+.recharts-surface {
+  overflow: visible;
+}
+
+/* Remove default Recharts tooltip box outline (we render a custom pill). */
+.recharts-tooltip-wrapper {
+  outline: none;
+}
+
+/* Smooth transitions on chart elements. */
+.recharts-area-area {
+  transition: opacity 300ms var(--ease);
+}
+.recharts-line-curve {
+  transition: stroke-dashoffset 600ms var(--ease);
+}
+
+/* Active dot glow. */
+.recharts-active-dot circle {
+  filter: drop-shadow(0 0 6px rgba(34, 197, 94, 0.6));
+}
+
 /* ── Skeleton loading shimmer ──────────────────────────────────────────────
  * Lightweight CSS-only shimmer used by SkeletonLoader and the per-page
  * skeleton layouts. Colors are driven by CSS variables so dark mode (a
