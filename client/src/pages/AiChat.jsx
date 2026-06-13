@@ -3,6 +3,7 @@ import apiClient from '../api/client';
 import { extractError } from '../lib/format';
 import { sanitizeInput } from '../utils/sanitize';
 import AiAdvisorSkeleton from '../components/skeletons/AiAdvisorSkeleton';
+import ChatCharts from '../components/ChatCharts';
 
 /**
  * AI advisor chat. Posts to `POST /ai/chat`, which replies using a rich
@@ -21,12 +22,12 @@ import AiAdvisorSkeleton from '../components/skeletons/AiAdvisorSkeleton';
 
 /** Data-driven starter prompts shown above the input. */
 const QUICK_PROMPTS = [
+  'Give me an investment plan for ₹5,000/month',
+  'Give me an investment plan for ₹10,000/month',
+  'Show my portfolio allocation',
   'How am I doing this month?',
   'Where am I overspending?',
-  'Am I on track for my goals?',
   'What bills are due soon?',
-  'How is my portfolio doing?',
-  'What should I do with extra money?',
 ];
 
 /** Normalise a backend turn ('user' | 'model') into a render entry. */
@@ -85,7 +86,14 @@ export default function AiChat() {
     setSubmitting(true);
     try {
       const { data } = await apiClient.post('/ai/chat', { message: trimmed });
-      setHistory((prev) => [...prev, { role: 'assistant', content: data?.reply ?? '' }]);
+      setHistory((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: data?.reply ?? '',
+          charts: Array.isArray(data?.charts) ? data.charts : null,
+        },
+      ]);
     } catch (err) {
       const reason = extractError(err, 'AI advisor is unavailable right now.');
       setHistory((prev) => [
@@ -163,27 +171,32 @@ export default function AiChat() {
           </p>
         ) : (
           <ul className="space-y-3">
-            {history.map((entry, idx) => (
-              <li
-                key={idx}
-                className={
-                  entry.role === 'user' ? 'flex justify-end' : 'flex justify-start'
-                }
-              >
-                <div
-                  className={[
-                    'max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap break-words',
-                    entry.role === 'user'
-                      ? 'bg-indigo-600 text-white'
-                      : entry.isError
-                        ? 'bg-red-50 text-red-700'
-                        : 'bg-slate-100 text-slate-900',
-                  ].join(' ')}
+            {history.map((entry, idx) => {
+              const hasCharts = Array.isArray(entry.charts) && entry.charts.length > 0;
+              return (
+                <li
+                  key={idx}
+                  className={
+                    entry.role === 'user' ? 'flex justify-end' : 'flex justify-start'
+                  }
                 >
-                  {entry.content}
-                </div>
-              </li>
-            ))}
+                  <div
+                    className={[
+                      'rounded-lg px-3 py-2 text-sm whitespace-pre-wrap break-words',
+                      hasCharts ? 'w-full max-w-[95%]' : 'max-w-[85%]',
+                      entry.role === 'user'
+                        ? 'bg-indigo-600 text-white'
+                        : entry.isError
+                          ? 'bg-red-50 text-red-700'
+                          : 'bg-slate-100 text-slate-900',
+                    ].join(' ')}
+                  >
+                    {entry.content}
+                    {hasCharts && <ChatCharts charts={entry.charts} />}
+                  </div>
+                </li>
+              );
+            })}
             {submitting && (
               <li className="flex justify-start">
                 <div className="flex items-center gap-1 rounded-lg bg-slate-100 px-3 py-3">

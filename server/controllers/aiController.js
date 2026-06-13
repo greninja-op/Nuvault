@@ -483,6 +483,16 @@ function buildSystemPrompt(snapshot, req, userMessage = '') {
       'to 120 words covering income, expenses, net worth, top goal progress, and one ' +
       'recommendation — still plain text, still ending with one → Tip line.',
   );
+  if (scope.investments) {
+    lines.push('');
+    lines.push('When asked for an investment plan or allocation:');
+    lines.push('- Never recommend the user\'s existing specific holdings by name.');
+    lines.push('- Give a category-level allocation (Index Funds, Mid Cap, Debt/Emergency, Goals), not specific stock/crypto names.');
+    lines.push('- Show a percentage split and rupee amount for each category.');
+    lines.push('- Include a multi-year projection using 12% assumed returns.');
+    lines.push('- Always add: "Not registered financial advice — consult an advisor."');
+  }
+
   lines.push('');
   lines.push(SNAPSHOT_HEADER);
   lines.push(`Name: ${firstName}`);
@@ -802,6 +812,181 @@ async function callGeminiWithFallback(apiKey, systemPrompt, contents) {
   return lastResult;
 }
 
+// ── Investment-plan / allocation chart builders ─────────────────────────────
+
+/** Allocation chart colors (kept in sync with the frontend). */
+const CHART_COLORS = ['#6366f1', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444'];
+
+/** Fixed suggested split for an investment plan (percentages). */
+const PLAN_ALLOCATION = [
+  { name: 'Index Fund', pct: 40, sip: true },
+  { name: 'Mid Cap Fund', pct: 25, sip: true },
+  { name: 'Emergency Fund', pct: 20, sip: false },
+  { name: 'Goal Savings', pct: 15, sip: false },
+];
+
+/** Assumed annual return used for the SIP projection (illustrative only). */
+const ASSUMED_ANNUAL_RETURN = 0.12;
+
+/** Format a number as a currency amount (₹ for INR, else "<CODE> <n>"). */
+function formatAmount(currency, n) {
+  const num = Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+  return currency === 'INR' ? `₹${num}` : `${currency} ${num}`;
+}
+
+/**
+ * Pull a monthly rupee amount out of a free-text message, e.g.
+ * "₹10,000/month" → 10000, "5,000" → 5000, "5k" → 5000. Returns null when
+ * no plausible amount is present.
+ *
+ * @param {string} message
+ * @returns {number | null}
+ */
+function parseMonthlyAmount(message) {
+  const m = String(message || '');
+  const match = m.match(/(?:₹|rs\.?|inr)?\s*(\d[\d,]*)\s*(k)?/i);
+  if (!match) return null;
+  let n = Number(match[1].replace(/,/g, ''));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  if (match[2]) n *= 1000; // "5k"
+  return n;
+}
+
+/**
+ * Decide whether an investment-scope question should produce charts, and
+ * which kind. Returns null for a plain text answer.
+ *
+ * @param {string} message
+ * @param {{ investments?: boolean }} scope
+ * @returns {{ kind: 'plan', monthly: number | null } | { kind: 'currentAllocation' } | null}
+ */
+function detectChartIntent(message, scope) {
+  if (!scope || !scope.investments) return null;
+  const m = String(message || '').toLowerCase();
+  const amount = parseMonthlyAmount(message);
+  const wantsPlan =
+    /\bplan\b/.test(m) ||
+    /how should i invest|where should i put|invest plan/.test(m) ||
+    (amount !== null && /invest|sip|month/.test(m));
+
+  if (wantsPlan) {
+    return { kind: 'plan', monthly: amount };
+  }
+  if (/allocat|split|breakdown|holding/.test(m)) {
+    return { kind: 'currentAllocation' };
+  }
+  return null;
+}
+
+/** Future value of a monthly SIP after `months`, at ASSUMED_ANNUAL_RETURN. */
+function sipFutureValue(monthlyContribution, months) {
+  const r = ASSUMED_ANNUAL_RETURN / 12;
+  const fv = monthlyContribution * ((Math.pow(1 + r, months) - 1) / r) * (1 + r);
+  return Math.round(fv);
+}
+
+/**
+ * Build a deterministic investment-plan response (text + pie + line charts)
+ * for a monthly amount. Uses category-level allocation only — never the
+ * user's specific holdings.
+ *
+ * @param {number | null} monthly
+ * @param {ReturnType<typeof buildSnapshot> extends Promise<infer S> ? S : any} snapshot
+ * @param {string} currency
+ * @returns {{ text: string, charts: object[] }}
+ */
+function buildInvestmentPlan(monthly, snapshot, currency) {
+  const M = monthly && monthly > 0 ? monthly : 5000;
+
+  // Use the user's first not-yet-complete goal for the "Goal Savings" label.
+  const activeGoal =
+    (snapshot.goals || []).find((g) => (g.pct || 0) < 100) || (snapshot.goals || [])[0];
+  const fixedNames = new Set(PLAN_ALLOCATION.map((a) => a.name.toLowerCase()));
+  const goalLabel =
+    activeGoal && activeGoal.name && !fixedNames.has(activeGoal.name.toLowerCase())
+      ? activeGoal.name
+      : 'Goal Savings';
+
+  const alloc = PLAN_ALLOCATION.map((a) => ({
+    ...a,
+    label: a.name === 'Goal Savings' ? goalLabel : a.name,
+    amount: Math.round((M * a.pct) / 100),
+  }));
+
+  const pieData = alloc.map((a) => ({ name: a.label, value: a.pct, amount: a.amount }));
+
+  // Project only the market-investing portion (Index + Mid Cap = 65%).
+  const investingMonthly = alloc
+    .filter((a) => a.sip)
+    .reduce((sum, a) => sum + a.amount, 0);
+  const lineData = [
+    { year: 'Year 1', amount: sipFutureValue(investingMonthly, 12) },
+    { year: 'Year 3', amount: sipFutureValue(investingMonthly, 36) },
+    { year: 'Year 5', amount: sipFutureValue(investingMonthly, 60) },
+    { year: 'Year 10', amount: sipFutureValue(investingMonthly, 120) },
+  ];
+
+  const pad = (label) => label.padEnd(22, ' ');
+  const lines = [];
+  lines.push(`Here is a suggested split for ${formatAmount(currency, M)}/month:`);
+  for (const a of alloc) {
+    lines.push(`${pad(a.label + (a.sip ? ' (SIP)' : ''))}${formatAmount(currency, a.amount)}  ${a.pct}%`);
+  }
+  lines.push('');
+  lines.push('Projected growth (12% assumed, not guaranteed):');
+  for (const p of lineData) {
+    lines.push(`${p.year.padEnd(8, ' ')}→ ${formatAmount(currency, p.amount)}`);
+  }
+  lines.push('');
+  lines.push('Not registered financial advice — consult an advisor.');
+  lines.push('→ Tip: Automate these SIPs on salary day so investing happens before spending.');
+
+  return {
+    text: lines.join('\n'),
+    charts: [
+      { chartType: 'pie', title: 'Suggested Monthly Allocation', data: pieData },
+      { chartType: 'line', title: 'Projected Growth Over 10 Years', data: lineData },
+    ],
+  };
+}
+
+/**
+ * Build a current-holdings allocation response (text + pie). Returns null
+ * when the user has no investments (caller then falls back to a text answer).
+ *
+ * @param {object} snapshot
+ * @param {string} currency
+ * @returns {{ text: string, charts: object[] } | null}
+ */
+function buildCurrentAllocation(snapshot, currency) {
+  const holdings = (snapshot.investments && snapshot.investments.holdings) || [];
+  if (holdings.length === 0) return null;
+
+  const total = holdings.reduce((sum, h) => sum + (h.currentValue || 0), 0);
+  if (total <= 0) return null;
+
+  const pieData = holdings
+    .map((h) => ({
+      name: h.name,
+      value: roundTo2dp((h.currentValue / total) * 100),
+      amount: roundTo2dp(h.currentValue),
+    }))
+    .sort((a, b) => b.amount - a.amount);
+
+  const top = pieData[0];
+  const lines = [];
+  lines.push(
+    `Your portfolio is worth ${formatAmount(currency, total)} across ${holdings.length} holding${holdings.length === 1 ? '' : 's'}.`,
+  );
+  lines.push(`${top.name} is the largest at ${top.value}%.`);
+  lines.push('→ Tip: Keep any single holding under 40% to stay diversified.');
+
+  return {
+    text: lines.join('\n'),
+    charts: [{ chartType: 'pie', title: 'Current Portfolio Allocation', data: pieData }],
+  };
+}
+
 // ── Route handlers ──────────────────────────────────────────────────────────
 
 async function chatHandler(req, res, next) {
@@ -814,6 +999,31 @@ async function chatHandler(req, res, next) {
       buildSnapshot(req),
       scopedFind(ChatHistory, req).sort({ timestamp: 1 }).lean(),
     ]);
+
+    // Chart responses (investment plan / current allocation) are built
+    // deterministically server-side — guaranteed-correct numbers and valid
+    // charts, no Gemini dependency or quota cost.
+    const scope = detectQuestionScope(userMessage);
+    const chartIntent = detectChartIntent(userMessage, scope);
+    if (chartIntent) {
+      const currency = currencyOf(req);
+      const built =
+        chartIntent.kind === 'plan'
+          ? buildInvestmentPlan(chartIntent.monthly, snapshot, currency)
+          : buildCurrentAllocation(snapshot, currency);
+
+      if (built) {
+        await ChatHistory.create({ user: req.user._id, role: 'user', message: userMessage });
+        await ChatHistory.create({ user: req.user._id, role: 'model', message: built.text });
+        res.status(200).json({
+          type: 'chart_response',
+          reply: built.text,
+          charts: built.charts,
+        });
+        return;
+      }
+      // No holdings to chart → fall through to the normal text answer.
+    }
 
     const systemPrompt = buildSystemPrompt(snapshot, req, userMessage);
     const contents = buildContents(priorTurns, userMessage);
@@ -879,6 +1089,10 @@ module.exports = {
   buildSnapshot,
   buildSystemPrompt,
   detectQuestionScope,
+  detectChartIntent,
+  parseMonthlyAmount,
+  buildInvestmentPlan,
+  buildCurrentAllocation,
   buildContents,
   resolveApiKey,
   resolveApiKeys,

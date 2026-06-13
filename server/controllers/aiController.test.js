@@ -35,6 +35,9 @@ const {
   clearHistory,
   _resetKeyBlackouts,
   detectQuestionScope,
+  detectChartIntent,
+  parseMonthlyAmount,
+  buildInvestmentPlan,
   SERVICE_UNAVAILABLE_MESSAGE,
   SNAPSHOT_HEADER,
   RECENT_TRANSACTIONS_LIMIT,
@@ -92,6 +95,73 @@ describe('detectQuestionScope', () => {
     expect(s).toMatchObject({ monthly: true, netWorth: true, topCategories: true });
     expect(s.transactions).toBeUndefined();
     expect(s.full).toBeUndefined();
+  });
+});
+
+// =============================================================================
+// parseMonthlyAmount + detectChartIntent (pure)
+// =============================================================================
+
+describe('parseMonthlyAmount', () => {
+  test.each([
+    ['Give me an investment plan for ₹10,000/month', 10000],
+    ['invest 5,000 monthly', 5000],
+    ['put 5k into funds', 5000],
+    ['₹2,50,000 lumpsum', 250000],
+  ])('%s → %d', (msg, expected) => {
+    expect(parseMonthlyAmount(msg)).toBe(expected);
+  });
+
+  test('returns null when no amount present', () => {
+    expect(parseMonthlyAmount('show my portfolio allocation')).toBeNull();
+  });
+});
+
+describe('detectChartIntent', () => {
+  test('investment plan with amount → plan intent', () => {
+    const scope = detectQuestionScope('Give me an investment plan for ₹10,000/month');
+    expect(detectChartIntent('Give me an investment plan for ₹10,000/month', scope)).toEqual({
+      kind: 'plan',
+      monthly: 10000,
+    });
+  });
+
+  test('portfolio allocation (no amount) → currentAllocation intent', () => {
+    const scope = detectQuestionScope('Show my portfolio allocation');
+    expect(detectChartIntent('Show my portfolio allocation', scope)).toEqual({
+      kind: 'currentAllocation',
+    });
+  });
+
+  test('non-investment question → no chart intent', () => {
+    const scope = detectQuestionScope('how am I doing this month?');
+    expect(detectChartIntent('how am I doing this month?', scope)).toBeNull();
+  });
+});
+
+describe('buildInvestmentPlan', () => {
+  const emptySnapshot = { goals: [], investments: { holdings: [] } };
+
+  test('produces a 40/25/20/15 split and a 4-point projection', () => {
+    const { text, charts } = buildInvestmentPlan(10000, emptySnapshot, 'INR');
+    const pie = charts.find((c) => c.chartType === 'pie');
+    const line = charts.find((c) => c.chartType === 'line');
+
+    expect(pie.data.map((d) => d.value)).toEqual([40, 25, 20, 15]);
+    expect(pie.data.map((d) => d.amount)).toEqual([4000, 2500, 2000, 1500]);
+    expect(line.data).toHaveLength(4);
+    // Year 1 ≈ 12 months of the 65% investing portion (6500) growing a little.
+    expect(line.data[0].amount).toBeGreaterThan(78000);
+    expect(line.data[3].amount).toBeGreaterThan(line.data[0].amount);
+    expect(text).toMatch(/consult an advisor/i);
+    expect(text).not.toMatch(/\*\*/); // no markdown bold
+  });
+
+  test('uses an active goal name for the 4th category', () => {
+    const snap = { goals: [{ name: 'Europe Trip', pct: 25 }], investments: { holdings: [] } };
+    const { charts } = buildInvestmentPlan(10000, snap, 'INR');
+    const pie = charts.find((c) => c.chartType === 'pie');
+    expect(pie.data[3].name).toBe('Europe Trip');
   });
 });
 
@@ -334,6 +404,68 @@ describe('POST /ai/chat — snapshot composition', () => {
     expect(prompt).toContain('Ada');
     expect(prompt).not.toContain('Lovelace'); // only the first name is used
     expect(prompt).toContain('USD');
+  });
+});
+
+// =============================================================================
+// Chart responses (investment plan / current allocation)
+// =============================================================================
+
+describe('POST /ai/chat — chart responses', () => {
+  test('investment plan question returns chart_response without calling Gemini', async () => {
+    const app = buildApp({ config: { geminiApiKey: 'test-key' } });
+    const res = await authedChat(app, userA, {
+      message: 'Give me an investment plan for ₹10,000/month',
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.type).toBe('chart_response');
+    expect(res.body.reply).toMatch(/suggested split/i);
+    expect(res.body.charts).toHaveLength(2);
+    expect(res.body.charts[0].chartType).toBe('pie');
+    expect(res.body.charts[1].chartType).toBe('line');
+    // Built deterministically — Gemini is never contacted.
+    expect(axios.post).not.toHaveBeenCalled();
+    // Both turns persisted.
+    expect(await ChatHistory.countDocuments({ user: userA })).toBe(2);
+  });
+
+  test('portfolio allocation returns a pie of current holdings', async () => {
+    await Investment.create([
+      { user: userA, type: 'stock', name: 'Reliance', quantity: 10, buyPrice: 100, currentPrice: 150 },
+      { user: userA, type: 'crypto', name: 'Bitcoin', quantity: 1, buyPrice: 1000, currentPrice: 1200 },
+    ]);
+
+    const app = buildApp({ config: { geminiApiKey: 'test-key' } });
+    const res = await authedChat(app, userA, { message: 'Show my portfolio allocation' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.type).toBe('chart_response');
+    expect(res.body.charts).toHaveLength(1);
+    expect(res.body.charts[0].chartType).toBe('pie');
+    expect(res.body.charts[0].data.length).toBe(2);
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  test('portfolio allocation with no holdings falls back to a Gemini text answer', async () => {
+    axios.post.mockResolvedValueOnce(geminiOk('You have no holdings yet.'));
+    const app = buildApp({ config: { geminiApiKey: 'test-key' } });
+    const res = await authedChat(app, userA, { message: 'Show my portfolio allocation' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.charts).toBeUndefined();
+    expect(res.body.reply).toBe('You have no holdings yet.');
+    expect(axios.post).toHaveBeenCalledTimes(1);
+  });
+
+  test('a normal question still returns a plain text reply via Gemini', async () => {
+    axios.post.mockResolvedValueOnce(geminiOk('Doing great.'));
+    const app = buildApp({ config: { geminiApiKey: 'test-key' } });
+    const res = await authedChat(app, userA, { message: 'How am I doing this month?' });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ reply: 'Doing great.' });
+    expect(axios.post).toHaveBeenCalledTimes(1);
   });
 });
 
