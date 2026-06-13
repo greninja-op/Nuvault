@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Skeleton } from 'boneyard-js/react';
 import apiClient from '../api/client';
 import { extractError } from '../lib/format';
 
@@ -112,6 +113,14 @@ export default function AiChat() {
   }
 
   return (
+    <Skeleton
+      name="ai-advisor"
+      loading={false}
+      animate="shimmer"
+      transition={300}
+      color="rgba(0,0,0,0.06)"
+      darkColor="rgba(255,255,255,0.06)"
+    >
     <section className="flex h-[calc(100dvh-11rem)] flex-col md:h-[70vh]">
       <header className="flex shrink-0 items-start justify-between gap-3">
         <div>
@@ -215,5 +224,6 @@ export default function AiChat() {
         </button>
       </form>
     </section>
+    </Skeleton>
   );
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Skeleton } from 'boneyard-js/react';
 import apiClient from '../api/client';
 import Field, { inputClass } from '../components/Field';
 import Modal from '../components/Modal';
@@ -180,6 +181,14 @@ export default function Bills() {
   }
 
   return (
+    <Skeleton
+      name="bills"
+      loading={loading}
+      animate="shimmer"
+      transition={300}
+      color="rgba(0,0,0,0.06)"
+      darkColor="rgba(255,255,255,0.06)"
+    >
     <section className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -406,6 +415,7 @@ export default function Bills() {
         </form>
       </Modal>
     </section>
+    </Skeleton>
   );
 }
 

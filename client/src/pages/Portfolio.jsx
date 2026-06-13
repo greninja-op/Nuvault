@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Skeleton } from 'boneyard-js/react';
 import {
   Cell,
   Legend,
@@ -330,6 +331,14 @@ export default function Portfolio() {
   }
 
   return (
+    <Skeleton
+      name="portfolio"
+      loading={loading}
+      animate="shimmer"
+      transition={300}
+      color="rgba(0,0,0,0.06)"
+      darkColor="rgba(255,255,255,0.06)"
+    >
     <section className="space-y-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -478,6 +487,7 @@ export default function Portfolio() {
         </form>
       </Modal>
     </section>
+    </Skeleton>
   );
 }
 

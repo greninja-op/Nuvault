@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Skeleton } from 'boneyard-js/react';
 import SipCalculator from '../components/calculators/SipCalculator';
 import LumpsumCalculator from '../components/calculators/LumpsumCalculator';
 import SwpCalculator from '../components/calculators/SwpCalculator';
@@ -38,6 +39,14 @@ export default function Calculators() {
     TABS.find((t) => t.id === active)?.Component ?? SipCalculator;
 
   return (
+    <Skeleton
+      name="calculators"
+      loading={false}
+      animate="shimmer"
+      transition={300}
+      color="rgba(0,0,0,0.06)"
+      darkColor="rgba(255,255,255,0.06)"
+    >
     <section className="space-y-6">
       <header>
         <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Finance Calculators</h1>
@@ -91,5 +100,6 @@ export default function Calculators() {
         <ActiveComponent />
       </div>
     </section>
+    </Skeleton>
   );
 }

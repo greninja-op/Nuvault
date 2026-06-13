@@ -8,3 +8,10 @@ coverage
 .env.*.local
 *.log
 .DS_Store
+
+# boneyard-js: ignore the auto-generated skeleton capture data (regenerated
+# by the dev server on each run). The bootstrap src/bones/registry.js stub
+# is committed (and frozen via skip-worktree) so the production/Vercel build
+# can always resolve the `./bones/registry` import in main.jsx, even with no
+# captures present.
+src/bones/*.bones.json
