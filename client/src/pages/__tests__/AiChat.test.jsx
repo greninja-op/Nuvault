@@ -26,7 +26,7 @@ describe('AiChat', () => {
 
     renderWithProviders(<AiChat />);
 
-    fireEvent.change(screen.getByPlaceholderText(/ask the advisor/i), {
+    fireEvent.change(await screen.findByPlaceholderText(/ask the advisor/i), {
       target: { value: 'How am I doing?' },
     });
     fireEvent.click(screen.getByRole('button', { name: /send/i }));
@@ -47,7 +47,7 @@ describe('AiChat', () => {
 
     renderWithProviders(<AiChat />);
 
-    fireEvent.change(screen.getByPlaceholderText(/ask the advisor/i), {
+    fireEvent.change(await screen.findByPlaceholderText(/ask the advisor/i), {
       target: { value: 'hello' },
     });
     fireEvent.click(screen.getByRole('button', { name: /send/i }));

@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Skeleton } from 'boneyard-js/react';
 import apiClient from '../api/client';
 import Field, { inputClass } from '../components/Field';
 import Modal from '../components/Modal';
 import { useDisplayCurrency } from '../currency/CurrencyContext';
 import { extractError, formatCurrency } from '../lib/format';
+import InvestmentsSkeleton from '../components/skeletons/InvestmentsSkeleton';
+import EmptyState from '../components/EmptyState';
 
 const TYPES = ['stock', 'crypto', 'mutual_fund', 'fd', 'other'];
 
@@ -149,15 +150,9 @@ export default function Investments() {
 
   const items = summary?.items ?? [];
 
+  if (loading) return <InvestmentsSkeleton />;
+
   return (
-    <Skeleton
-      name="investments"
-      loading={loading}
-      animate="shimmer"
-      transition={300}
-      color="rgba(0,0,0,0.06)"
-      darkColor="rgba(255,255,255,0.06)"
-    >
     <section className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -202,7 +197,11 @@ export default function Investments() {
       {loading ? (
         <p className="text-sm text-slate-500">Loading…</p>
       ) : items.length === 0 ? (
-        <p className="text-sm text-slate-500">No investments yet.</p>
+        <EmptyState
+          message="No investments tracked. Add your first one."
+          actionLabel="New investment"
+          onAction={openCreate}
+        />
       ) : (
         <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
           <table className="min-w-full divide-y divide-slate-200 text-sm">
@@ -385,7 +384,6 @@ export default function Investments() {
         </form>
       </Modal>
     </section>
-    </Skeleton>
   );
 }
 

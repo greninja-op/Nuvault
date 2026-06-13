@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Skeleton } from 'boneyard-js/react';
 import apiClient from '../api/client';
 import Field, { inputClass } from '../components/Field';
 import Modal from '../components/Modal';
 import { useDisplayCurrency } from '../currency/CurrencyContext';
 import { extractError, formatCurrency } from '../lib/format';
+import GoalsSkeleton from '../components/skeletons/GoalsSkeleton';
+import EmptyState from '../components/EmptyState';
 
 const EMPTY_FORM = { name: '', targetAmount: '', targetDate: '', category: '' };
 
@@ -136,15 +137,9 @@ export default function Goals() {
     }
   }
 
+  if (loading) return <GoalsSkeleton />;
+
   return (
-    <Skeleton
-      name="goals"
-      loading={loading}
-      animate="shimmer"
-      transition={300}
-      color="rgba(0,0,0,0.06)"
-      darkColor="rgba(255,255,255,0.06)"
-    >
     <section className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -171,7 +166,11 @@ export default function Goals() {
       {loading ? (
         <p className="text-sm text-slate-500">Loading…</p>
       ) : items.length === 0 ? (
-        <p className="text-sm text-slate-500">No goals yet.</p>
+        <EmptyState
+          message="No goals yet. Set your first financial goal."
+          actionLabel="New goal"
+          onAction={openCreate}
+        />
       ) : (
         <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {items.map((goal) => {
@@ -346,6 +345,5 @@ export default function Goals() {
         </form>
       </Modal>
     </section>
-    </Skeleton>
   );
 }

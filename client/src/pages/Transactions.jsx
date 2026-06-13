@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Skeleton } from 'boneyard-js/react';
 import apiClient from '../api/client';
 import Field, { inputClass } from '../components/Field';
 import Modal from '../components/Modal';
 import { useDisplayCurrency } from '../currency/CurrencyContext';
 import { extractError, formatCurrency, formatDate } from '../lib/format';
+import TransactionsSkeleton from '../components/skeletons/TransactionsSkeleton';
+import EmptyState from '../components/EmptyState';
 
 const TYPES = ['income', 'expense'];
 
@@ -151,15 +152,9 @@ export default function Transactions() {
   const totalIncome = summary.income.reduce((s, x) => s + Number(x.total || 0), 0);
   const totalExpense = summary.expense.reduce((s, x) => s + Number(x.total || 0), 0);
 
+  if (loading) return <TransactionsSkeleton />;
+
   return (
-    <Skeleton
-      name="transactions"
-      loading={loading}
-      animate="shimmer"
-      transition={300}
-      color="rgba(0,0,0,0.06)"
-      darkColor="rgba(255,255,255,0.06)"
-    >
     <section className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -231,7 +226,11 @@ export default function Transactions() {
       {loading ? (
         <p className="text-sm text-slate-500">Loading…</p>
       ) : items.length === 0 ? (
-        <p className="text-sm text-slate-500">No transactions in this period.</p>
+        <EmptyState
+          message="No transactions yet. Add your first one."
+          actionLabel="New transaction"
+          onAction={openCreate}
+        />
       ) : (
         <>
           {/* Desktop / tablet: table */}
@@ -424,7 +423,6 @@ export default function Transactions() {
         </form>
       </Modal>
     </section>
-    </Skeleton>
   );
 }
 

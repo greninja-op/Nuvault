@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Skeleton } from 'boneyard-js/react';
 import apiClient from '../api/client';
 import Field, { inputClass } from '../components/Field';
 import Modal from '../components/Modal';
 import { useDisplayCurrency } from '../currency/CurrencyContext';
 import { extractError, formatCurrency } from '../lib/format';
+import BudgetSkeleton from '../components/skeletons/BudgetSkeleton';
+import EmptyState from '../components/EmptyState';
 
 const MONTHS = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -141,15 +142,9 @@ export default function Budgets() {
     }
   }
 
+  if (loading) return <BudgetSkeleton />;
+
   return (
-    <Skeleton
-      name="budget"
-      loading={loading}
-      animate="shimmer"
-      transition={300}
-      color="rgba(0,0,0,0.06)"
-      darkColor="rgba(255,255,255,0.06)"
-    >
     <section className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -196,7 +191,11 @@ export default function Budgets() {
       {loading ? (
         <p className="text-sm text-slate-500">Loading…</p>
       ) : items.length === 0 ? (
-        <p className="text-sm text-slate-500">No budgets for this period.</p>
+        <EmptyState
+          message="No budgets set. Create your first budget."
+          actionLabel="New budget"
+          onAction={openCreate}
+        />
       ) : (
         <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {items.map((budget) => {
@@ -340,6 +339,5 @@ export default function Budgets() {
         </form>
       </Modal>
     </section>
-    </Skeleton>
   );
 }

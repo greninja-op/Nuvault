@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Skeleton } from 'boneyard-js/react';
 import apiClient from '../api/client';
 import { extractError } from '../lib/format';
+import AiAdvisorSkeleton from '../components/skeletons/AiAdvisorSkeleton';
 
 /**
  * AI advisor chat. Posts to `POST /ai/chat`, which replies using a rich
@@ -42,6 +42,7 @@ export default function AiChat() {
   const [submitting, setSubmitting] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [error, setError] = useState(null);
+  const [initialLoading, setInitialLoading] = useState(true);
   const scrollRef = useRef(null);
 
   // Restore the saved conversation on mount.
@@ -55,6 +56,8 @@ export default function AiChat() {
         }
       } catch {
         // A failed restore is non-fatal — start with an empty chat.
+      } finally {
+        if (active) setInitialLoading(false);
       }
     })();
     return () => {
@@ -112,15 +115,9 @@ export default function AiChat() {
     }
   }
 
+  if (initialLoading) return <AiAdvisorSkeleton />;
+
   return (
-    <Skeleton
-      name="ai-advisor"
-      loading={false}
-      animate="shimmer"
-      transition={300}
-      color="rgba(0,0,0,0.06)"
-      darkColor="rgba(255,255,255,0.06)"
-    >
     <section className="flex h-[calc(100dvh-11rem)] flex-col md:h-[70vh]">
       <header className="flex shrink-0 items-start justify-between gap-3">
         <div>
@@ -224,6 +221,5 @@ export default function AiChat() {
         </button>
       </form>
     </section>
-    </Skeleton>
   );
 }

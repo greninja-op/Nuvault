@@ -1,9 +1,8 @@
 import '@testing-library/jest-dom/vitest';
 
-// jsdom doesn't implement these browser APIs that boneyard-js's <Skeleton>
-// relies on (dark-mode detection via matchMedia, container sizing via
-// ResizeObserver). Provide minimal no-op polyfills so wrapped pages render
-// in the test environment.
+// jsdom doesn't implement matchMedia / ResizeObserver. A couple of UI
+// components (responsive hooks, charts) reference them, so provide minimal
+// no-op polyfills for the test environment.
 if (typeof window !== 'undefined') {
   if (typeof window.matchMedia !== 'function') {
     window.matchMedia = (query) => ({

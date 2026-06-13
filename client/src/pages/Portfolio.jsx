@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Skeleton } from 'boneyard-js/react';
 import {
   Cell,
   Legend,
@@ -13,6 +12,8 @@ import Field, { inputClass } from '../components/Field';
 import Modal from '../components/Modal';
 import { useDisplayCurrency } from '../currency/CurrencyContext';
 import { extractError, formatCurrency } from '../lib/format';
+import PortfolioSkeleton from '../components/skeletons/PortfolioSkeleton';
+import EmptyState from '../components/EmptyState';
 
 /**
  * Portfolio overview. A single unified `/portfolio` resource backs every
@@ -330,15 +331,9 @@ export default function Portfolio() {
     }
   }
 
+  if (loading) return <PortfolioSkeleton />;
+
   return (
-    <Skeleton
-      name="portfolio"
-      loading={loading}
-      animate="shimmer"
-      transition={300}
-      color="rgba(0,0,0,0.06)"
-      darkColor="rgba(255,255,255,0.06)"
-    >
     <section className="space-y-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -406,6 +401,12 @@ export default function Portfolio() {
 
       {loading ? (
         <p className="text-sm text-slate-500">Loading…</p>
+      ) : (summary?.items ?? []).length === 0 ? (
+        <EmptyState
+          message="Portfolio is empty. Add your assets."
+          actionLabel="Add holding"
+          onAction={() => openCreate('stock')}
+        />
       ) : (
         <div className="space-y-6">
           {KINDS.map((cfg) => (
@@ -487,7 +488,6 @@ export default function Portfolio() {
         </form>
       </Modal>
     </section>
-    </Skeleton>
   );
 }
 

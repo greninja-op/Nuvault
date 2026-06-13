@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Skeleton } from 'boneyard-js/react';
 import apiClient from '../api/client';
 import { useDisplayCurrency } from '../currency/CurrencyContext';
 import { extractError, formatCurrency } from '../lib/format';
+import DashboardSkeleton from '../components/skeletons/DashboardSkeleton';
 
 /**
  * Dashboard / net-worth view. Fetches `GET /networth?currency=...` whenever
@@ -39,15 +39,9 @@ export default function Dashboard() {
 
   const currency = data?.displayCurrency ?? displayCurrency;
 
+  if (loading) return <DashboardSkeleton />;
+
   return (
-    <Skeleton
-      name="dashboard"
-      loading={loading}
-      animate="shimmer"
-      transition={300}
-      color="rgba(0,0,0,0.06)"
-      darkColor="rgba(255,255,255,0.06)"
-    >
     <section className="space-y-6">
       <header>
         <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Dashboard</h1>
@@ -103,7 +97,6 @@ export default function Dashboard() {
         </>
       )}
     </section>
-    </Skeleton>
   );
 }
 

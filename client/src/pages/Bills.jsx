@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Skeleton } from 'boneyard-js/react';
 import apiClient from '../api/client';
 import Field, { inputClass } from '../components/Field';
 import Modal from '../components/Modal';
 import { useDisplayCurrency } from '../currency/CurrencyContext';
 import { extractError, formatCurrency, formatDate } from '../lib/format';
+import BillsSkeleton from '../components/skeletons/BillsSkeleton';
+import EmptyState from '../components/EmptyState';
 
 const FREQUENCIES = ['monthly', 'weekly', 'yearly', 'one-time'];
 
@@ -180,15 +181,9 @@ export default function Bills() {
     }
   }
 
+  if (loading) return <BillsSkeleton />;
+
   return (
-    <Skeleton
-      name="bills"
-      loading={loading}
-      animate="shimmer"
-      transition={300}
-      color="rgba(0,0,0,0.06)"
-      darkColor="rgba(255,255,255,0.06)"
-    >
     <section className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -215,7 +210,11 @@ export default function Bills() {
       {loading ? (
         <p className="text-sm text-slate-500">Loading…</p>
       ) : items.length === 0 ? (
-        <p className="text-sm text-slate-500">No bills yet.</p>
+        <EmptyState
+          message="No bills added. Add your first bill."
+          actionLabel="New bill"
+          onAction={openCreate}
+        />
       ) : (
         <>
           {/* Desktop / tablet: table */}
@@ -415,7 +414,6 @@ export default function Bills() {
         </form>
       </Modal>
     </section>
-    </Skeleton>
   );
 }
 
