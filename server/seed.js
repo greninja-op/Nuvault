@@ -23,6 +23,14 @@
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
+const dns = require('dns');
+// Atlas SRV URIs need DNS resolvers that return SRV records; many ISP
+// resolvers don't. Route Node DNS through public resolvers when the URI
+// is mongodb+srv://. Local URIs are left alone.
+if (typeof process.env.MONGO_URI === 'string' && process.env.MONGO_URI.startsWith('mongodb+srv://')) {
+  dns.setServers(['8.8.8.8', '1.1.1.1', '8.8.4.4']);
+}
+
 const mongoose = require('mongoose');
 
 const User = require('./models/User');
