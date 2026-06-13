@@ -3,8 +3,8 @@
  *
  * These render instantly (no browser-capture / build step) and are used to
  * compose per-page skeleton layouts in `components/skeletons/`. The shimmer
- * animation + colors live in `index.css` (`.skeleton-shimmer`, driven by
- * `--skeleton-base` / `--skeleton-shine` CSS variables for dark-mode support).
+ * animation + colors live in `index.css` (`.skeleton-base`, driven by the
+ * `--bg-elevated` / `--bg-hover` design tokens for theme support).
  *
  * Variants:
  *   - SkeletonCard   — a rounded shimmer block (cards, buttons, charts)
@@ -23,7 +23,7 @@
 export function SkeletonCard({ width = '100%', height = '80px', className = '' }) {
   return (
     <div
-      className={`skeleton-shimmer ${className}`}
+      className={`skeleton-base ${className}`}
       style={{ width, height }}
       aria-hidden="true"
     />
@@ -40,7 +40,7 @@ export function SkeletonCard({ width = '100%', height = '80px', className = '' }
 export function SkeletonText({ width = '100%', className = '' }) {
   return (
     <div
-      className={`skeleton-shimmer ${className}`}
+      className={`skeleton-base ${className}`}
       style={{ width, height: '0.75rem', borderRadius: '4px' }}
       aria-hidden="true"
     />
@@ -57,7 +57,7 @@ export function SkeletonCircle({ size = 40 }) {
   const dimension = typeof size === 'number' ? `${size}px` : size;
   return (
     <div
-      className="skeleton-shimmer"
+      className="skeleton-base"
       style={{ width: dimension, height: dimension, borderRadius: '50%' }}
       aria-hidden="true"
     />

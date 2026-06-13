@@ -1,343 +1,538 @@
 import { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { AnimatePresence, motion } from 'framer-motion';
+import {
+  ArrowLeftRight,
+  Briefcase,
+  Calculator,
+  CreditCard,
+  Grid3X3,
+  Landmark,
+  LayoutDashboard,
+  LogOut,
+  PieChart,
+  Receipt,
+  Settings as SettingsIcon,
+  Sparkles,
+  Target,
+  TrendingUp,
+} from 'lucide-react';
 import apiClient from '../api/client';
 import { useAuth } from '../auth/AuthContext';
-import {
-  SUPPORTED_CURRENCIES,
-  useDisplayCurrency,
-} from '../currency/CurrencyContext';
+import { SUPPORTED_CURRENCIES, useDisplayCurrency } from '../currency/CurrencyContext';
+import useWindowSize from '../hooks/useWindowSize';
+import PageTransition from './PageTransition';
 
-/**
- * Inline SVG icon set (no external icon dependency). Each icon is a
- * 20x20 stroke icon that inherits `currentColor`, so Tailwind text-color
- * utilities style it. Keyed by name so nav items can reference an icon
- * declaratively.
- */
-function Icon({ name, className = 'h-5 w-5' }) {
-  const common = {
-    className,
-    viewBox: '0 0 24 24',
-    fill: 'none',
-    stroke: 'currentColor',
-    strokeWidth: 2,
-    strokeLinecap: 'round',
-    strokeLinejoin: 'round',
-    'aria-hidden': true,
-  };
-  switch (name) {
-    case 'dashboard':
-      return (
-        <svg {...common}><path d="M3 13h8V3H3zM13 21h8V3h-8zM3 21h8v-6H3z" /></svg>
-      );
-    case 'assets':
-      return (
-        <svg {...common}><rect x="3" y="7" width="18" height="12" rx="2" /><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" /></svg>
-      );
-    case 'liabilities':
-      return (
-        <svg {...common}><path d="M12 2v20M5 5h9a3 3 0 0 1 0 6H7a3 3 0 0 0 0 6h10" /></svg>
-      );
-    case 'transactions':
-      return (
-        <svg {...common}><path d="M7 7h13M7 7l3-3M7 7l3 3M17 17H4M17 17l-3-3M17 17l-3 3" /></svg>
-      );
-    case 'budgets':
-      return (
-        <svg {...common}><path d="M3 3v18h18" /><rect x="7" y="12" width="3" height="6" /><rect x="12" y="8" width="3" height="10" /><rect x="17" y="5" width="3" height="13" /></svg>
-      );
-    case 'investments':
-      return (
-        <svg {...common}><path d="M3 17l6-6 4 4 8-8" /><path d="M21 7v5h-5" /></svg>
-      );
-    case 'portfolio':
-      return (
-        <svg {...common}><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
-      );
-    case 'goals':
-      return (
-        <svg {...common}><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1" /></svg>
-      );
-    case 'bills':
-      return (
-        <svg {...common}><path d="M6 2h12v20l-3-2-3 2-3-2-3 2zM9 7h6M9 11h6" /></svg>
-      );
-    case 'calculators':
-      return (
-        <svg {...common}><rect x="4" y="2" width="16" height="20" rx="2" /><path d="M8 6h8M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M16 14h4M8 18h.01M12 18h.01" /></svg>
-      );
-    case 'chat':
-      return (
-        <svg {...common}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
-      );
-    case 'settings':
-      return (
-        <svg {...common}><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H1a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 2.6 7a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H7a1.6 1.6 0 0 0 1-1.5V1a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V7a1.6 1.6 0 0 0 1.5 1H23a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z" /></svg>
-      );
-    case 'more':
-      return (
-        <svg {...common}><circle cx="5" cy="12" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="19" cy="12" r="1.5" /></svg>
-      );
-    case 'menu':
-      return (
-        <svg {...common}><path d="M3 6h18M3 12h18M3 18h18" /></svg>
-      );
-    case 'close':
-      return (
-        <svg {...common}><path d="M18 6 6 18M6 6l12 12" /></svg>
-      );
-    case 'logout':
-      return (
-        <svg {...common}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" /></svg>
-      );
-    default:
-      return <svg {...common}><circle cx="12" cy="12" r="9" /></svg>;
-  }
-}
+const SIDEBAR_WIDTH = 220;
 
-/**
- * Every navigable destination. `icon` keys into {@link Icon}. The desktop
- * sidebar renders all of these (icon + label); the mobile bottom bar
- * renders a small primary subset plus a "More" button that opens a
- * drawer containing the full list.
- */
+/** Full navigation set (real Nuvault routes). */
 const NAV_ITEMS = [
-  { to: '/', label: 'Dashboard', icon: 'dashboard', end: true },
-  { to: '/assets', label: 'Assets', icon: 'assets' },
-  { to: '/liabilities', label: 'Liabilities', icon: 'liabilities' },
-  { to: '/transactions', label: 'Transactions', icon: 'transactions' },
-  { to: '/budgets', label: 'Budgets', icon: 'budgets' },
-  { to: '/investments', label: 'Investments', icon: 'investments' },
-  { to: '/portfolio', label: 'Portfolio', icon: 'portfolio' },
-  { to: '/goals', label: 'Goals', icon: 'goals' },
-  { to: '/bills', label: 'Bills', icon: 'bills' },
-  { to: '/calculators', label: 'Calculators', icon: 'calculators' },
-  { to: '/chat', label: 'AI Advisor', icon: 'chat' },
-  { to: '/settings', label: 'Settings', icon: 'settings' },
+  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
+  { to: '/transactions', label: 'Transactions', icon: ArrowLeftRight },
+  { to: '/budgets', label: 'Budget', icon: PieChart },
+  { to: '/assets', label: 'Assets', icon: Landmark },
+  { to: '/liabilities', label: 'Liabilities', icon: CreditCard },
+  { to: '/portfolio', label: 'Portfolio', icon: Briefcase },
+  { to: '/investments', label: 'Investments', icon: TrendingUp },
+  { to: '/goals', label: 'Goals', icon: Target },
+  { to: '/bills', label: 'Bills', icon: Receipt },
+  { to: '/calculators', label: 'Calculators', icon: Calculator },
+  { to: '/chat', label: 'AI Advisor', icon: Sparkles },
 ];
 
-/** The handful of destinations shown directly in the mobile bottom bar. */
-const MOBILE_PRIMARY = ['/', '/transactions', '/portfolio', '/calculators'];
+const SETTINGS_ITEM = { to: '/settings', label: 'Settings', icon: SettingsIcon };
 
-/**
- * Shell layout wrapping every protected route.
- *
- * Responsive behavior:
- *   - Desktop (md+): persistent left sidebar with icons + labels, a top
- *     bar with greeting + currency selector + logout.
- *   - Mobile (<md): top bar shows the logo + a menu button; primary
- *     destinations live in a fixed bottom navigation bar (icons only);
- *     a slide-up drawer (the "More"/menu button) exposes every
- *     destination, the currency selector, and logout.
- *
- * All breakpoints use Tailwind's sm/md/lg prefixes only — no custom CSS.
- */
+/** Mobile bottom-bar primary destinations (4 + a "More" button). */
+const MOBILE_PRIMARY = ['/', '/transactions', '/budgets', '/chat'];
+
+/** Destinations shown inside the mobile "More" drawer. */
+const DRAWER_ITEMS = NAV_ITEMS.filter((i) => !MOBILE_PRIMARY.includes(i.to)).concat(SETTINGS_ITEM);
+
+/** Brand wordmark: "Nu" in accent, "vault" muted, with a vault glyph. */
+function Logo() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <rect x="3" y="3" width="18" height="18" rx="5" stroke="var(--accent)" strokeWidth="2" />
+        <circle cx="12" cy="11" r="3" stroke="var(--accent)" strokeWidth="2" />
+        <path d="M12 14v4" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" />
+      </svg>
+      <span style={{ fontSize: 20, fontFamily: 'Poppins', fontWeight: 700 }}>
+        <span style={{ color: 'var(--accent)' }}>Nu</span>
+        <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>vault</span>
+      </span>
+    </div>
+  );
+}
+
+function initialsOf(name, email) {
+  const src = (name || email || '?').trim();
+  return src.charAt(0).toUpperCase();
+}
+
 export default function AppShell() {
   const { user, logout } = useAuth();
   const { displayCurrency, setDisplayCurrency } = useDisplayCurrency();
+  const { isMobile } = useWindowSize();
   const navigate = useNavigate();
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   async function handleLogout() {
-    setMenuOpen(false);
-    // Feature 2: tell the server to blacklist this JWT before we drop it
-    // locally. Best-effort — even if the call fails (offline/expired), we
-    // still clear the client session and redirect.
+    setDrawerOpen(false);
     try {
       await apiClient.post('/auth/logout');
     } catch {
-      /* ignore — proceed with local logout regardless */
+      /* best-effort — proceed with local logout regardless */
     }
     logout();
     navigate('/login', { replace: true });
   }
 
-  const primaryItems = MOBILE_PRIMARY.map((to) =>
-    NAV_ITEMS.find((i) => i.to === to)
-  ).filter(Boolean);
-
-  const sidebarLinkClass = ({ isActive }) =>
-    [
-      'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium',
-      isActive
-        ? 'bg-indigo-50 text-indigo-700'
-        : 'text-slate-700 hover:bg-slate-100',
-    ].join(' ');
-
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <div className="flex min-h-screen">
-        {/* Desktop sidebar (icons + labels) */}
-        <aside className="hidden w-56 flex-shrink-0 border-r border-slate-200 bg-white p-4 md:block">
-          <div className="px-3 text-lg font-semibold text-slate-900">Nuvault</div>
-          <nav className="mt-6 space-y-1">
-            {NAV_ITEMS.map((item) => (
-              <NavLink key={item.to} to={item.to} end={item.end} className={sidebarLinkClass}>
-                <Icon name={item.icon} />
-                <span>{item.label}</span>
-              </NavLink>
-            ))}
-          </nav>
-        </aside>
+    <div style={{ minHeight: '100vh', background: 'var(--bg-base)', color: 'var(--text-primary)' }}>
+      {!isMobile && (
+        <DesktopSidebar
+          user={user}
+          displayCurrency={displayCurrency}
+          setDisplayCurrency={setDisplayCurrency}
+          onLogout={handleLogout}
+        />
+      )}
 
-        <div className="flex min-w-0 flex-1 flex-col">
-          {/* Top bar */}
-          <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 md:px-6">
-            <div className="flex items-center gap-3">
-              <span className="text-base font-semibold text-slate-900 md:hidden">
-                Nuvault
-              </span>
-              <span className="hidden text-sm text-slate-600 md:inline">
-                {user?.name ? `Hi, ${user.name}` : 'Welcome'}
-              </span>
-            </div>
-
-            <div className="flex items-center gap-3">
-              {/* Currency selector — hidden on very small screens (sm+) */}
-              <label className="hidden items-center gap-2 text-xs font-medium text-slate-600 sm:flex">
-                <span className="hidden md:inline">Currency</span>
-                <select
-                  aria-label="Display currency"
-                  value={displayCurrency}
-                  onChange={(event) => setDisplayCurrency(event.target.value)}
-                  className="rounded-md border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                >
-                  {SUPPORTED_CURRENCIES.map((code) => (
-                    <option key={code} value={code}>
-                      {code}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              {/* Logout — desktop only (mobile logout lives in the drawer) */}
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="hidden rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100 md:inline-block"
-              >
-                Log out
-              </button>
-
-              {/* Menu button — mobile only */}
-              <button
-                type="button"
-                onClick={() => setMenuOpen(true)}
-                aria-label="Open menu"
-                className="flex h-11 w-11 items-center justify-center rounded-md text-slate-700 hover:bg-slate-100 md:hidden"
-              >
-                <Icon name="menu" className="h-6 w-6" />
-              </button>
-            </div>
-          </header>
-
-          {/* Page content. Extra bottom padding on mobile so the fixed
-              bottom nav never covers content. */}
-          <main className="flex-1 px-4 py-6 pb-24 md:px-8 md:pb-6">
+      <main
+        style={{
+          marginLeft: isMobile ? 0 : SIDEBAR_WIDTH,
+          minHeight: '100vh',
+          background: 'var(--bg-base)',
+        }}
+      >
+        <div
+          style={{
+            padding: isMobile ? 16 : 28,
+            paddingBottom: isMobile ? 'calc(72px + env(safe-area-inset-bottom))' : 28,
+          }}
+        >
+          <PageTransition>
             <Outlet />
-          </main>
+          </PageTransition>
         </div>
+      </main>
+
+      {isMobile && (
+        <MobileBottomNav onMore={() => setDrawerOpen(true)} />
+      )}
+
+      <AnimatePresence>
+        {isMobile && drawerOpen && (
+          <MoreDrawer
+            onClose={() => setDrawerOpen(false)}
+            displayCurrency={displayCurrency}
+            setDisplayCurrency={setDisplayCurrency}
+            onLogout={handleLogout}
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/* ── Desktop sidebar ───────────────────────────────────────────────────────*/
+function DesktopSidebar({ user, displayCurrency, setDisplayCurrency, onLogout }) {
+  return (
+    <aside
+      style={{
+        position: 'fixed',
+        left: 0,
+        top: 0,
+        bottom: 0,
+        width: SIDEBAR_WIDTH,
+        background: 'var(--bg-surface)',
+        borderRight: '1px solid var(--border)',
+        display: 'flex',
+        flexDirection: 'column',
+        padding: '20px 12px',
+        zIndex: 20,
+      }}
+    >
+      <div style={{ marginBottom: 28, paddingLeft: 8 }}>
+        <Logo />
       </div>
 
-      {/* Mobile bottom navigation (icons only) */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 flex items-stretch justify-around border-t border-slate-200 bg-white md:hidden">
-        {primaryItems.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.end}
-            className={({ isActive }) =>
-              [
-                'flex min-h-[56px] flex-1 flex-col items-center justify-center gap-1 px-1 py-2 text-[10px] font-medium',
-                isActive ? 'text-indigo-700' : 'text-slate-500',
-              ].join(' ')
-            }
-          >
-            <Icon name={item.icon} className="h-6 w-6" />
-            <span>{item.label}</span>
-          </NavLink>
+      <nav
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 2,
+        }}
+      >
+        {NAV_ITEMS.map((item) => (
+          <SidebarLink key={item.to} item={item} />
         ))}
-        <button
-          type="button"
-          onClick={() => setMenuOpen(true)}
-          aria-label="More"
-          className="flex min-h-[56px] flex-1 flex-col items-center justify-center gap-1 px-1 py-2 text-[10px] font-medium text-slate-500"
-        >
-          <Icon name="more" className="h-6 w-6" />
-          <span>More</span>
-        </button>
+
+        <div style={{ height: 1, background: 'var(--border)', margin: '10px 8px' }} />
+
+        <SidebarLink item={SETTINGS_ITEM} />
       </nav>
 
-      {/* Mobile drawer — full nav + currency + logout */}
-      {menuOpen && (
-        <div className="fixed inset-0 z-40 md:hidden">
+      {/* Currency selector (kept from the previous shell) */}
+      <div style={{ padding: '12px 8px 8px' }}>
+        <label
+          className="text-label"
+          htmlFor="sidebar-currency"
+          style={{ display: 'block', marginBottom: 6 }}
+        >
+          Currency
+        </label>
+        <select
+          id="sidebar-currency"
+          aria-label="Display currency"
+          value={displayCurrency}
+          onChange={(e) => setDisplayCurrency(e.target.value)}
+          style={{
+            width: '100%',
+            background: 'var(--bg-elevated)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-md)',
+            color: 'var(--text-primary)',
+            padding: '8px 10px',
+            fontSize: 13,
+            fontFamily: 'Poppins',
+            outline: 'none',
+          }}
+        >
+          {SUPPORTED_CURRENCIES.map((code) => (
+            <option key={code} value={code}>
+              {code}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Bottom user area */}
+      <div
+        style={{
+          marginTop: 8,
+          paddingTop: 16,
+          borderTop: '1px solid var(--border)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+        }}
+      >
+        <div
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: '50%',
+            background: 'var(--accent-muted)',
+            color: 'var(--accent)',
+            fontSize: 13,
+            fontWeight: 600,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}
+        >
+          {initialsOf(user?.name, user?.email)}
+        </div>
+        <div style={{ minWidth: 0, flex: 1 }}>
           <div
-            className="absolute inset-0 bg-slate-900/50"
-            onClick={() => setMenuOpen(false)}
-            aria-hidden
-          />
-          <div className="absolute inset-x-0 bottom-0 max-h-[85vh] overflow-y-auto rounded-t-2xl bg-white p-4 shadow-xl">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-base font-semibold text-slate-900">Menu</span>
-              <button
-                type="button"
-                onClick={() => setMenuOpen(false)}
-                aria-label="Close menu"
-                className="flex h-11 w-11 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100"
-              >
-                <Icon name="close" className="h-6 w-6" />
-              </button>
-            </div>
-
-            {/* Currency selector inside drawer (for the smallest screens) */}
-            <label className="mb-3 flex items-center justify-between gap-2 rounded-md bg-slate-50 px-3 py-3 text-sm font-medium text-slate-700 sm:hidden">
-              <span>Display currency</span>
-              <select
-                aria-label="Display currency"
-                value={displayCurrency}
-                onChange={(event) => setDisplayCurrency(event.target.value)}
-                className="rounded-md border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              >
-                {SUPPORTED_CURRENCIES.map((code) => (
-                  <option key={code} value={code}>
-                    {code}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <nav className="grid grid-cols-2 gap-2">
-              {NAV_ITEMS.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.end}
-                  onClick={() => setMenuOpen(false)}
-                  className={({ isActive }) =>
-                    [
-                      'flex min-h-[48px] items-center gap-3 rounded-md px-3 py-2 text-sm font-medium',
-                      isActive
-                        ? 'bg-indigo-50 text-indigo-700'
-                        : 'text-slate-700 hover:bg-slate-100',
-                    ].join(' ')
-                  }
-                >
-                  <Icon name={item.icon} />
-                  <span>{item.label}</span>
-                </NavLink>
-              ))}
-            </nav>
-
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="mt-3 flex min-h-[48px] w-full items-center justify-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
-            >
-              <Icon name="logout" />
-              <span>Log out</span>
-            </button>
+            style={{
+              fontSize: 13,
+              fontWeight: 500,
+              color: 'var(--text-primary)',
+              maxWidth: 140,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {user?.name || 'Account'}
+          </div>
+          <div
+            style={{
+              fontSize: 11,
+              color: 'var(--text-muted)',
+              maxWidth: 140,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {user?.email || ''}
           </div>
         </div>
+        <button
+          type="button"
+          onClick={onLogout}
+          aria-label="Log out"
+          style={{
+            width: 32,
+            height: 32,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: 'var(--radius-md)',
+            background: 'transparent',
+            border: 'none',
+            color: 'var(--text-muted)',
+            cursor: 'pointer',
+            flexShrink: 0,
+          }}
+        >
+          <LogOut size={16} strokeWidth={1.75} />
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+function SidebarLink({ item }) {
+  const Icon = item.icon;
+  return (
+    <NavLink
+      to={item.to}
+      end={item.end}
+      style={({ isActive }) => ({
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '10px 12px',
+        borderRadius: 'var(--radius-md)',
+        textDecoration: 'none',
+        fontSize: 14,
+        fontWeight: 500,
+        fontFamily: 'Poppins',
+        transition: 'all 150ms var(--ease)',
+        color: isActive ? 'var(--accent)' : 'var(--text-secondary)',
+        background: isActive ? 'var(--accent-muted)' : 'transparent',
+        boxShadow: isActive ? 'inset 3px 0 0 var(--accent)' : 'none',
+      })}
+    >
+      {({ isActive }) => (
+        <>
+          <Icon
+            size={20}
+            strokeWidth={1.75}
+            style={{ color: isActive ? 'var(--accent)' : 'inherit', flexShrink: 0 }}
+          />
+          <span>{item.label}</span>
+        </>
       )}
+    </NavLink>
+  );
+}
+
+/* ── Mobile bottom navigation ──────────────────────────────────────────────*/
+function MobileBottomNav({ onMore }) {
+  const primaryItems = MOBILE_PRIMARY.map((to) => NAV_ITEMS.find((i) => i.to === to)).filter(
+    Boolean,
+  );
+
+  return (
+    <nav
+      style={{
+        position: 'fixed',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: 60,
+        background: 'var(--bg-surface)',
+        borderTop: '1px solid var(--border)',
+        backdropFilter: 'blur(20px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+        paddingBottom: 'env(safe-area-inset-bottom)',
+        zIndex: 100,
+        display: 'flex',
+      }}
+    >
+      {primaryItems.map((item) => (
+        <BottomNavItem key={item.to} item={item} />
+      ))}
+      <motion.button
+        type="button"
+        onClick={onMore}
+        whileTap={{ scale: 0.85 }}
+        aria-label="More"
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 3,
+          padding: '8px 4px',
+          background: 'transparent',
+          border: 'none',
+          cursor: 'pointer',
+          color: 'var(--text-muted)',
+          WebkitTapHighlightColor: 'transparent',
+        }}
+      >
+        <Grid3X3 size={22} strokeWidth={1.75} />
+        <span style={{ fontSize: 10, fontWeight: 500 }}>More</span>
+      </motion.button>
+    </nav>
+  );
+}
+
+function BottomNavItem({ item }) {
+  const Icon = item.icon;
+  return (
+    <NavLink
+      to={item.to}
+      end={item.end}
+      style={{ flex: 1, textDecoration: 'none', WebkitTapHighlightColor: 'transparent' }}
+    >
+      {({ isActive }) => (
+        <motion.div
+          whileTap={{ scale: 0.85 }}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 3,
+            padding: '8px 4px',
+            color: isActive ? 'var(--accent)' : 'var(--text-muted)',
+            transition: 'color 150ms var(--ease)',
+          }}
+        >
+          <Icon size={22} strokeWidth={1.75} />
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 500,
+              height: isActive ? 'auto' : 0,
+              overflow: 'hidden',
+            }}
+          >
+            {item.label}
+          </span>
+        </motion.div>
+      )}
+    </NavLink>
+  );
+}
+
+/* ── Mobile "More" drawer ──────────────────────────────────────────────────*/
+function MoreDrawer({ onClose, displayCurrency, setDisplayCurrency, onLogout }) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 200 }}>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.2 }}
+        onClick={onClose}
+        style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)' }}
+      />
+      <motion.div
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+        style={{
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          background: 'var(--bg-surface)',
+          borderRadius: 'var(--radius-xl) var(--radius-xl) 0 0',
+          borderTop: '1px solid var(--border)',
+          padding: '12px 20px 32px',
+        }}
+      >
+        <div
+          style={{
+            width: 32,
+            height: 4,
+            background: 'var(--border)',
+            borderRadius: 'var(--radius-full)',
+            margin: '0 auto 16px',
+          }}
+        />
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          {DRAWER_ITEMS.map((item) => {
+            const Icon = item.icon;
+            return (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.end}
+                onClick={onClose}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: 14,
+                  borderRadius: 'var(--radius-lg)',
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border)',
+                  textDecoration: 'none',
+                  color: 'var(--text-secondary)',
+                }}
+              >
+                <Icon size={24} strokeWidth={1.75} />
+                <span style={{ fontSize: 12, fontWeight: 500 }}>{item.label}</span>
+              </NavLink>
+            );
+          })}
+        </div>
+
+        {/* Currency + logout */}
+        <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <select
+            aria-label="Display currency"
+            value={displayCurrency}
+            onChange={(e) => setDisplayCurrency(e.target.value)}
+            style={{
+              flex: 1,
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-md)',
+              color: 'var(--text-primary)',
+              padding: '10px 12px',
+              fontSize: 14,
+              fontFamily: 'Poppins',
+              outline: 'none',
+            }}
+          >
+            {SUPPORTED_CURRENCIES.map((code) => (
+              <option key={code} value={code}>
+                {code}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={onLogout}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '10px 16px',
+              borderRadius: 'var(--radius-md)',
+              background: 'var(--red-muted)',
+              color: 'var(--red)',
+              border: 'none',
+              fontSize: 14,
+              fontWeight: 500,
+              fontFamily: 'Poppins',
+              cursor: 'pointer',
+              minHeight: 44,
+            }}
+          >
+            <LogOut size={16} strokeWidth={1.75} />
+            Log out
+          </button>
+        </div>
+      </motion.div>
     </div>
   );
 }

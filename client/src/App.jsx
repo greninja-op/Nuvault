@@ -3,6 +3,7 @@ import { AuthProvider } from './auth/AuthContext';
 import ProtectedRoute from './auth/ProtectedRoute';
 import { CurrencyProvider } from './currency/CurrencyContext';
 import AppShell from './components/AppShell';
+import useTheme from './hooks/useTheme';
 
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -26,6 +27,10 @@ import NotFound from './pages/NotFound';
  * every protected route in a sidebar layout.
  */
 export default function App() {
+  // Activate the theme controller: applies the persisted theme (`.light`
+  // class on <html>, or dark by default) on mount and keeps it in sync.
+  useTheme();
+
   return (
     <AuthProvider>
       <CurrencyProvider>
