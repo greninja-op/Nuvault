@@ -3,7 +3,7 @@ import { SkeletonCard, SkeletonText, SkeletonScreen } from '../SkeletonLoader';
 /** Mirrors AI Advisor: alternating chat bubbles + input bar. */
 export default function AiAdvisorSkeleton() {
   return (
-    <SkeletonScreen className="flex h-[calc(100dvh-11rem)] flex-col md:h-[70vh]">
+    <SkeletonScreen className="flex h-[calc(100dvh-11rem)] flex-col md:h-[calc(100dvh-3.5rem)]">
       <SkeletonText width="10rem" className="mb-4 shrink-0" />
 
       <div

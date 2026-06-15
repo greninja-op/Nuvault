@@ -127,7 +127,7 @@ export default function AiChat() {
   if (initialLoading) return <AiAdvisorSkeleton />;
 
   return (
-    <section className="flex h-[calc(100dvh-11rem)] flex-col md:h-[70vh]">
+    <section className="flex h-[calc(100dvh-11rem)] flex-col md:h-[calc(100dvh-3.5rem)]">
       <header className="flex shrink-0 items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">AI advisor</h1>
