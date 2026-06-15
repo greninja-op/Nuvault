@@ -86,24 +86,44 @@ export default function AreaChartCard({
   const gradId = `areaGrad-${useId().replace(/[:]/g, '')}`;
   const resolvedHeight = height ?? (sparkline ? 60 : isMobile ? 200 : 280);
 
-  // Detect an all-negative series (e.g. a net-debt net-worth history). When
-  // every value is negative we pad the Y domain so the line isn't pinned to
-  // the chart edge, and show an explanatory caption beneath the chart.
+  // Detect an all-negative series (e.g. a net-debt net-worth history).
   const numericValues = data
     .map((d) => Number(d?.[dataKey]))
     .filter((n) => Number.isFinite(n));
   const allNegative =
     !sparkline && numericValues.length > 0 && numericValues.every((n) => n < 0);
-  const yDomain = allNegative
-    ? [Math.min(...numericValues) * 1.02, Math.max(...numericValues) * 0.98]
-    : ['auto', 'auto'];
+
+  // A negative (net-debt) series must NOT read as green "growth". Use a
+  // warning amber tone, fill downward toward the baseline, and pin the Y
+  // scale to nice rounded bounds with explicit ticks so the line never
+  // floats outside the bottom grid line.
+  const effectiveColor = allNegative ? '#d97706' : color;
+
+  let yDomain = ['auto', 'auto'];
+  let yTicks;
+  let areaBaseValue;
+  if (allNegative) {
+    const dataMin = Math.min(...numericValues);
+    const dataMax = Math.max(...numericValues);
+    const step = niceNum((dataMax - dataMin) / 3 || Math.abs(dataMin) / 3 || 1, true);
+    const lower = Math.floor((dataMin - step * 0.5) / step) * step;
+    const upper = Math.ceil((dataMax + step * 0.5) / step) * step;
+    yDomain = [lower, upper];
+    yTicks = [];
+    for (let t = lower; t <= upper + step * 0.001; t += step) yTicks.push(Math.round(t));
+    areaBaseValue = lower; // fill downward to the bottom of the plot
+  }
+
+  // Uniform X tick spacing: choose an interval that yields ~6 evenly spaced
+  // labels so they never crowd or duplicate at the right edge.
+  const xInterval = !sparkline && data.length > 8 ? Math.ceil(data.length / 6) - 1 : 0;
 
   const chart = (
     <div
       style={{
         width: '100%',
         height: resolvedHeight,
-        filter: sparkline ? undefined : `drop-shadow(0 0 6px ${hexToGlow(color)})`,
+        filter: sparkline ? undefined : `drop-shadow(0 0 6px ${hexToGlow(effectiveColor)})`,
         pointerEvents: sparkline ? 'none' : undefined,
         overflow: 'hidden',
       }}
@@ -113,9 +133,9 @@ export default function AreaChartCard({
           {showGradient && (
             <defs>
               <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={color} stopOpacity={0.2} />
-                <stop offset="75%" stopColor={color} stopOpacity={0.05} />
-                <stop offset="100%" stopColor={color} stopOpacity={0} />
+                <stop offset="0%" stopColor={effectiveColor} stopOpacity={0.2} />
+                <stop offset="75%" stopColor={effectiveColor} stopOpacity={0.05} />
+                <stop offset="100%" stopColor={effectiveColor} stopOpacity={0} />
               </linearGradient>
             </defs>
           )}
@@ -130,7 +150,9 @@ export default function AreaChartCard({
               tick={{ fontSize: 11, fill: 'var(--text-muted)', fontFamily: 'Poppins' }}
               tickLine={false}
               axisLine={false}
-              interval="preserveStartEnd"
+              interval={xInterval}
+              minTickGap={16}
+              tickMargin={8}
               padding={{ left: 8, right: 8 }}
             />
           )}
@@ -142,6 +164,7 @@ export default function AreaChartCard({
               axisLine={false}
               width={isMobile ? 48 : 60}
               domain={yDomain}
+              ticks={yTicks}
               tickFormatter={formatRupeeShort}
             />
           )}
@@ -151,11 +174,12 @@ export default function AreaChartCard({
           <Area
             type="monotone"
             dataKey={dataKey}
-            stroke={color}
+            stroke={effectiveColor}
             strokeWidth={sparkline ? 1.5 : 2}
             fill={showGradient ? `url(#${gradId})` : 'none'}
+            baseValue={areaBaseValue}
             dot={false}
-            activeDot={sparkline ? false : <CustomActiveDot color={color} />}
+            activeDot={sparkline ? false : <CustomActiveDot color={effectiveColor} />}
             isAnimationActive
           />
         </AreaChart>
@@ -166,7 +190,7 @@ export default function AreaChartCard({
   const chartWithNote = (
     <>
       {chart}
-      {allNegative && (
+      {allNegative && !card && (
         <div
           style={{
             fontSize: 12,
@@ -194,19 +218,70 @@ export default function AreaChartCard({
         overflow: 'hidden',
       }}
     >
-      {(title || subtitle) && (
+      {(title || subtitle || allNegative) && (
         <div style={{ marginBottom: 8 }}>
-          {title && (
-            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{title}</div>
-          )}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 8,
+              flexWrap: 'wrap',
+            }}
+          >
+            {title && (
+              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
+                {title}
+              </div>
+            )}
+            {allNegative && (
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  padding: '3px 10px',
+                  borderRadius: 'var(--radius-full)',
+                  background: 'var(--amber-muted)',
+                  color: 'var(--amber)',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                ▼ Net debt position
+              </span>
+            )}
+          </div>
           {subtitle && (
-            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{subtitle}</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{subtitle}</div>
           )}
         </div>
       )}
       {chartWithNote}
     </div>
   );
+}
+
+/**
+ * Round a number to a "nice" 1 / 2 / 5 × 10ⁿ value, for tidy axis steps.
+ * When `round` is false it rounds the magnitude up to the next nice number.
+ */
+function niceNum(range, round) {
+  const safe = Math.abs(range) || 1;
+  const exp = Math.floor(Math.log10(safe));
+  const frac = safe / 10 ** exp;
+  let niceFrac;
+  if (round) {
+    if (frac < 1.5) niceFrac = 1;
+    else if (frac < 3) niceFrac = 2;
+    else if (frac < 7) niceFrac = 5;
+    else niceFrac = 10;
+  } else if (frac <= 1) niceFrac = 1;
+  else if (frac <= 2) niceFrac = 2;
+  else if (frac <= 5) niceFrac = 5;
+  else niceFrac = 10;
+  return niceFrac * 10 ** exp;
 }
 
 /** Convert a hex color to a low-alpha rgba string for the line glow. */

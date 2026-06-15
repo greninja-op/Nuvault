@@ -122,9 +122,10 @@ body {
   transition: stroke-dashoffset 600ms var(--ease);
 }
 
-/* Active dot glow. */
+/* Active dot glow is supplied per-series by the custom dot's own drop-shadow,
+ * so the dot color always matches the line (green for growth, amber for debt). */
 .recharts-active-dot circle {
-  filter: drop-shadow(0 0 6px rgba(22, 163, 74, 0.5));
+  filter: none;
 }
 
 /* ── Skeleton loading shimmer ──────────────────────────────────────────────
