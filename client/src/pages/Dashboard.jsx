@@ -158,6 +158,7 @@ function NetWorthBar({ data, isMobile }) {
         background: 'var(--bg-surface)',
         borderRadius: 'var(--radius-lg)',
         border: '1px solid var(--border)',
+        boxShadow: 'var(--shadow-sm)',
         padding: isMobile ? 12 : 16,
         overflow: 'hidden',
       }}
@@ -171,7 +172,7 @@ function NetWorthBar({ data, isMobile }) {
       <div style={{ width: '100%', height: isMobile ? 200 : 260, overflow: 'hidden' }}>
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={chartData} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 6" stroke="var(--chart-grid)" vertical={false} />
+            <CartesianGrid strokeDasharray="3 6" stroke="var(--border)" vertical={false} />
             <XAxis
               dataKey="name"
               tick={{ fontSize: 11, fill: 'var(--text-muted)', fontFamily: 'Poppins' }}
@@ -207,7 +208,7 @@ function BarPillTooltip({ active, payload }) {
   return (
     <div
       style={{
-        background: 'var(--bg-elevated)',
+        background: 'var(--bg-surface)',
         border: '1px solid var(--border)',
         borderRadius: 'var(--radius-full)',
         padding: '5px 12px',
@@ -235,6 +236,7 @@ function SummaryCard({ label, value, tone = 'neutral' }) {
         background: 'var(--bg-surface)',
         border: '1px solid var(--border)',
         borderRadius: 'var(--radius-lg)',
+        boxShadow: 'var(--shadow-sm)',
         padding: '20px',
       }}
     >

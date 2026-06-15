@@ -124,7 +124,7 @@ body {
 
 /* Active dot glow. */
 .recharts-active-dot circle {
-  filter: drop-shadow(0 0 6px rgba(34, 197, 94, 0.6));
+  filter: drop-shadow(0 0 6px rgba(22, 163, 74, 0.5));
 }
 
 /* ── Skeleton loading shimmer ──────────────────────────────────────────────

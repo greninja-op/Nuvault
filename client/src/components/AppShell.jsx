@@ -315,10 +315,13 @@ function DesktopSidebar({ user, displayCurrency, setDisplayCurrency, onLogout })
 
 function SidebarLink({ item }) {
   const Icon = item.icon;
+  const [hover, setHover] = useState(false);
   return (
     <NavLink
       to={item.to}
       end={item.end}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
       style={({ isActive }) => ({
         display: 'flex',
         alignItems: 'center',
@@ -330,8 +333,16 @@ function SidebarLink({ item }) {
         fontWeight: 500,
         fontFamily: 'Poppins',
         transition: 'all 150ms var(--ease)',
-        color: isActive ? 'var(--accent)' : 'var(--text-secondary)',
-        background: isActive ? 'var(--accent-muted)' : 'transparent',
+        color: isActive
+          ? 'var(--accent)'
+          : hover
+            ? 'var(--text-primary)'
+            : 'var(--text-secondary)',
+        background: isActive
+          ? 'var(--accent-muted)'
+          : hover
+            ? 'var(--bg-hover)'
+            : 'transparent',
         boxShadow: isActive ? 'inset 3px 0 0 var(--accent)' : 'none',
       })}
     >

@@ -36,7 +36,7 @@ function PillTooltip({ active, payload, valueFormatter }) {
   return (
     <div
       style={{
-        background: 'var(--bg-elevated)',
+        background: 'var(--bg-surface)',
         border: '1px solid var(--border)',
         borderRadius: 'var(--radius-full)',
         padding: '5px 12px',

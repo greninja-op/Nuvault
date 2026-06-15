@@ -44,7 +44,7 @@ function CustomTooltip({ active, payload }) {
   return (
     <div
       style={{
-        background: 'var(--bg-elevated)',
+        background: 'var(--bg-surface)',
         border: '1px solid var(--border)',
         borderRadius: 'var(--radius-full)',
         padding: '5px 12px',
@@ -60,7 +60,7 @@ function CustomTooltip({ active, payload }) {
 }
 
 /** Active point: glowing outer ring + solid inner dot. */
-function CustomActiveDot({ cx, cy, color = '#22c55e' }) {
+function CustomActiveDot({ cx, cy, color = '#16a34a' }) {
   if (cx == null || cy == null) return null;
   return (
     <g style={{ filter: `drop-shadow(0 0 6px ${color})` }}>
@@ -77,7 +77,7 @@ export default function AreaChartCard({
   title,
   subtitle,
   height,
-  color = '#22c55e',
+  color = '#16a34a',
   showGradient = true,
   card = true,
   sparkline = false,
@@ -103,7 +103,7 @@ export default function AreaChartCard({
       style={{
         width: '100%',
         height: resolvedHeight,
-        filter: sparkline ? undefined : `drop-shadow(0 0 8px ${hexToGlow(color)})`,
+        filter: sparkline ? undefined : `drop-shadow(0 0 6px ${hexToGlow(color)})`,
         pointerEvents: sparkline ? 'none' : undefined,
         overflow: 'hidden',
       }}
@@ -113,15 +113,15 @@ export default function AreaChartCard({
           {showGradient && (
             <defs>
               <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={color} stopOpacity={0.25} />
-                <stop offset="75%" stopColor={color} stopOpacity={0.04} />
+                <stop offset="0%" stopColor={color} stopOpacity={0.2} />
+                <stop offset="75%" stopColor={color} stopOpacity={0.05} />
                 <stop offset="100%" stopColor={color} stopOpacity={0} />
               </linearGradient>
             </defs>
           )}
 
           {!sparkline && (
-            <CartesianGrid strokeDasharray="3 6" stroke="var(--chart-grid)" vertical={false} />
+            <CartesianGrid strokeDasharray="3 6" stroke="var(--border)" vertical={false} />
           )}
 
           {!sparkline && (
@@ -189,6 +189,7 @@ export default function AreaChartCard({
         background: 'var(--bg-surface)',
         borderRadius: 'var(--radius-lg)',
         border: '1px solid var(--border)',
+        boxShadow: 'var(--shadow-sm)',
         padding: isMobile ? 12 : 16,
         overflow: 'hidden',
       }}
@@ -211,10 +212,10 @@ export default function AreaChartCard({
 /** Convert a hex color to a low-alpha rgba string for the line glow. */
 function hexToGlow(hex) {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex);
-  if (!m) return 'rgba(34,197,94,0.3)';
+  if (!m) return 'rgba(22,163,74,0.4)';
   const int = parseInt(m[1], 16);
   const r = (int >> 16) & 255;
   const g = (int >> 8) & 255;
   const b = int & 255;
-  return `rgba(${r},${g},${b},0.3)`;
+  return `rgba(${r},${g},${b},0.4)`;
 }
