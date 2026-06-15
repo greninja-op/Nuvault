@@ -48,7 +48,7 @@ function CustomTooltip({ active, payload }) {
         border: '1px solid var(--border)',
         borderRadius: 'var(--radius-full)',
         padding: '5px 12px',
-        font: "500 12px/1 Poppins, system-ui, sans-serif",
+        font: "600 12px/1 Poppins, system-ui, sans-serif",
         color: 'var(--text-primary)',
         boxShadow: 'var(--shadow-md)',
         whiteSpace: 'nowrap',
@@ -129,7 +129,7 @@ export default function AreaChartCard({
       }}
     >
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
+        <AreaChart data={data} margin={{ top: 10, right: 12, bottom: 0, left: 4 }}>
           {showGradient && (
             <defs>
               <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
@@ -147,7 +147,7 @@ export default function AreaChartCard({
           {!sparkline && (
             <XAxis
               dataKey={xKey}
-              tick={{ fontSize: 11, fill: 'var(--text-muted)', fontFamily: 'Poppins' }}
+              tick={{ fontSize: 11, fill: 'var(--text-secondary)', fontFamily: 'Poppins' }}
               tickLine={false}
               axisLine={false}
               interval={xInterval}
@@ -159,17 +159,25 @@ export default function AreaChartCard({
 
           {!sparkline && (
             <YAxis
-              tick={{ fontSize: 11, fill: 'var(--text-muted)', fontFamily: 'Poppins' }}
+              tick={{ fontSize: 11, fill: 'var(--text-secondary)', fontFamily: 'Poppins' }}
               tickLine={false}
               axisLine={false}
-              width={isMobile ? 48 : 60}
+              width={isMobile ? 52 : 64}
               domain={yDomain}
               ticks={yTicks}
               tickFormatter={formatRupeeShort}
             />
           )}
 
-          {!sparkline && <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'var(--chart-grid)' }} />}
+          {!sparkline && (
+            <Tooltip
+              content={<CustomTooltip />}
+              cursor={{ stroke: 'var(--chart-grid)' }}
+              offset={16}
+              allowEscapeViewBox={{ x: false, y: false }}
+              wrapperStyle={{ zIndex: 10 }}
+            />
+          )}
 
           <Area
             type="monotone"
@@ -239,7 +247,7 @@ export default function AreaChartCard({
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: 5,
+                  gap: 6,
                   padding: '3px 10px',
                   borderRadius: 'var(--radius-full)',
                   background: 'var(--amber-muted)',
@@ -249,12 +257,21 @@ export default function AreaChartCard({
                   whiteSpace: 'nowrap',
                 }}
               >
-                ▼ Net debt position
+                <span
+                  style={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: '50%',
+                    background: 'var(--amber)',
+                    flexShrink: 0,
+                  }}
+                />
+                Net debt (negative balance)
               </span>
             )}
           </div>
           {subtitle && (
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{subtitle}</div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>{subtitle}</div>
           )}
         </div>
       )}

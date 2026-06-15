@@ -344,7 +344,7 @@ export default function Portfolio() {
             Portfolio
           </h1>
           <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-            Every holding in one place. Invested, value, and returns computed per request.
+            Every holding in one place. Invested amount, current value, and returns computed per request.
           </p>
         </div>
       </header>
