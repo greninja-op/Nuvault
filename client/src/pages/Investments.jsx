@@ -18,6 +18,7 @@ import { extractError } from '../lib/format';
 import { sanitizeInput } from '../utils/sanitize';
 import InvestmentsSkeleton from '../components/skeletons/InvestmentsSkeleton';
 import AreaChartCard from '../components/charts/AreaChartCard';
+import DonutChart from '../components/charts/DonutChart';
 import useSnapshots from '../hooks/useSnapshots';
 import useWindowSize from '../hooks/useWindowSize';
 import Input from '../components/ui/Input';
@@ -79,6 +80,8 @@ export default function Investments() {
 
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
+
+  const [activeType, setActiveType] = useState('all');
 
   async function load() {
     setLoading(true);
@@ -199,6 +202,37 @@ export default function Investments() {
   const returnPct = totalInvested > 0 ? (totalPnL / totalInvested) * 100 : 0;
   const pnlPositive = totalPnL >= 0;
 
+  // Client-side type filter for the list below (does NOT affect the donut).
+  const filtered = activeType === 'all' ? items : items.filter((i) => i.type === activeType);
+
+  // Allocation by type — always reflects the FULL list, never the filter.
+  const allocationMap = {};
+  for (const it of items) {
+    const v = Number(it.currentValue) || 0;
+    if (v <= 0) continue;
+    const key = it.type || 'other';
+    allocationMap[key] = (allocationMap[key] || 0) + v;
+  }
+  const allocationData = Object.entries(allocationMap).map(([type, value]) => ({
+    name: typeMeta(type).label,
+    value,
+    amount: value,
+  }));
+
+  // Type filter pills: "All" + only the types that actually have holdings.
+  const FILTER_LABELS = {
+    stock: 'Stocks',
+    crypto: 'Crypto',
+    mutual_fund: 'Mutual Funds',
+    fd: 'FDs',
+    other: 'Other',
+  };
+  const presentTypes = TYPES.filter((t) => items.some((i) => i.type === t));
+  const typeFilters = [
+    { id: 'all', label: 'All' },
+    ...presentTypes.map((t) => ({ id: t, label: FILTER_LABELS[t] ?? typeMeta(t).label })),
+  ];
+
   if (loading) return <InvestmentsSkeleton />;
 
   return (
@@ -244,6 +278,20 @@ export default function Investments() {
         </p>
       )}
 
+      {/* Type filter pills */}
+      {items.length > 0 && typeFilters.length > 1 && (
+        <div
+          className="no-scrollbar"
+          style={{ display: 'flex', flexWrap: isMobile ? 'nowrap' : 'wrap', gap: 8, overflowX: 'auto', paddingBottom: 4, marginBottom: 20 }}
+        >
+          {typeFilters.map((f) => (
+            <FilterPill key={f.id} active={activeType === f.id} onClick={() => setActiveType(f.id)}>
+              {f.label}
+            </FilterPill>
+          ))}
+        </div>
+      )}
+
       {summary && (
         <>
           {/* Summary strip */}
@@ -265,6 +313,34 @@ export default function Investments() {
               valueColor={pnlPositive ? 'var(--green)' : 'var(--red)'}
             />
           </div>
+
+          {/* Allocation donut — always reflects the full list, not the filter */}
+          {allocationData.length >= 2 && (
+            <div
+              style={{
+                background: 'var(--bg-surface)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-lg)',
+                padding: 20,
+                boxShadow: 'var(--shadow-sm)',
+                marginBottom: 24,
+              }}
+            >
+              <div style={{ marginBottom: 16 }}>
+                <div className="text-subhead" style={{ color: 'var(--text-primary)' }}>
+                  Allocation by Type
+                </div>
+                <div className="text-caption">Current investment mix</div>
+              </div>
+              <DonutChart
+                data={allocationData}
+                height={isMobile ? 200 : 240}
+                centerValue={format(totalCurrentValue)}
+                centerLabel="Total"
+                valueFormatter={(n) => format(n)}
+              />
+            </div>
+          )}
 
           {/* Growth trend chart */}
           {snapshots.length >= 2 && (
@@ -292,9 +368,14 @@ export default function Investments() {
 
       {items.length === 0 ? (
         <EmptyState onAdd={openCreate} />
+      ) : filtered.length === 0 ? (
+        <FilteredEmptyState
+          typeLabel={(FILTER_LABELS[activeType] ?? typeMeta(activeType).label).toLowerCase()}
+          onClear={() => setActiveType('all')}
+        />
       ) : isMobile ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {items.map((item) => (
+          {filtered.map((item) => (
             <InvestmentCard
               key={item._id}
               item={item}
@@ -327,7 +408,7 @@ export default function Investments() {
               </tr>
             </thead>
             <tbody>
-              {items.map((item, idx) => {
+              {filtered.map((item, idx) => {
                 const meta = typeMeta(item.type);
                 const gain = Number(item.gainLoss) || 0;
                 const pct = Number(item.gainLossPercent) || 0;
@@ -336,7 +417,7 @@ export default function Investments() {
                   <tr
                     key={item._id}
                     className="tx-row"
-                    style={{ borderBottom: idx === items.length - 1 ? 'none' : '1px solid var(--border-subtle)' }}
+                    style={{ borderBottom: idx === filtered.length - 1 ? 'none' : '1px solid var(--border-subtle)' }}
                   >
                     <Td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -578,6 +659,65 @@ function MiniStat({ label, value }) {
       <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{label}</div>
       <div style={{ fontSize: 13, fontWeight: 500, fontVariantNumeric: 'tabular-nums', color: 'var(--text-primary)', marginTop: 2 }}>
         {value}
+      </div>
+    </div>
+  );
+}
+
+function FilterPill({ active, onClick, children }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        borderRadius: 'var(--radius-full)',
+        padding: '7px 16px',
+        fontSize: 13,
+        fontWeight: 500,
+        fontFamily: 'Poppins',
+        cursor: 'pointer',
+        whiteSpace: 'nowrap',
+        flexShrink: 0,
+        transition: 'all 150ms var(--ease)',
+        border: '1px solid ' + (active || hover ? 'var(--accent)' : 'var(--border)'),
+        background: active ? 'var(--accent)' : 'var(--bg-elevated)',
+        color: active ? '#fff' : hover ? 'var(--text-primary)' : 'var(--text-secondary)',
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function FilteredEmptyState({ typeLabel, onClear }) {
+  return (
+    <div
+      style={{
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius-lg)',
+        boxShadow: 'var(--shadow-sm)',
+        padding: '60px 20px',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        textAlign: 'center',
+      }}
+    >
+      <TrendingUp size={48} strokeWidth={1.5} color="var(--text-muted)" />
+      <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginTop: 12 }}>
+        No {typeLabel} investments yet
+      </div>
+      <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 6 }}>
+        Try a different filter to see your other holdings.
+      </div>
+      <div style={{ marginTop: 16 }}>
+        <Button variant="ghost" onClick={onClear}>
+          Clear filter
+        </Button>
       </div>
     </div>
   );
