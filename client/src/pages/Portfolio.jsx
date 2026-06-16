@@ -1,34 +1,41 @@
 import { useEffect, useMemo, useState } from 'react';
+import {
+  BarChart2,
+  Bitcoin,
+  Briefcase,
+  Building2,
+  Gem,
+  Home,
+  Landmark,
+  Pencil,
+  PiggyBank,
+  Plus,
+  Trash2,
+  TrendingUp,
+} from 'lucide-react';
 import apiClient from '../api/client';
-import Field, { inputClass } from '../components/Field';
-import Modal from '../components/Modal';
+import { useDisplayCurrency } from '../currency/CurrencyContext';
+import { extractError } from '../lib/format';
+import { sanitizeInput } from '../utils/sanitize';
+import PortfolioSkeleton from '../components/skeletons/PortfolioSkeleton';
 import DonutChart from '../components/charts/DonutChart';
 import AreaChartCard from '../components/charts/AreaChartCard';
 import useSnapshots from '../hooks/useSnapshots';
 import useWindowSize from '../hooks/useWindowSize';
-import { useDisplayCurrency } from '../currency/CurrencyContext';
-import { extractError, formatCurrency } from '../lib/format';
-import { sanitizeInput } from '../utils/sanitize';
-import PortfolioSkeleton from '../components/skeletons/PortfolioSkeleton';
-import EmptyState from '../components/EmptyState';
+import Input from '../components/ui/Input';
+import Button from '../components/ui/Button';
+import Modal from '../components/ui/Modal';
 
 /**
- * Portfolio overview. A single unified `/portfolio` resource backs every
- * asset kind via a `kind` discriminator; the backend computes invested /
- * current value / returns and a per-kind allocation on every request.
+ * Portfolio overview. A unified `/portfolio` resource backs every asset kind
+ * via a `kind` discriminator; the backend computes invested / current value /
+ * returns and a per-kind allocation on every request.
  *
- * Endpoints:
- *   GET    /portfolio/summary  — items (with computed values) + totals +
- *                                allocation
- *   POST   /portfolio          — create (body carries `kind`)
- *   PUT    /portfolio/:id       — update
- *   DELETE /portfolio/:id       — delete
- */
-
-/**
- * Per-kind UI configuration: the section heading, the singular label used on
- * the "Add" button and modal title, and the ordered field set the form
- * renders. Field keys map 1:1 onto the model fields the backend whitelists.
+ * Endpoints (unchanged):
+ *   GET    /portfolio/summary
+ *   POST   /portfolio        (body carries `kind`)
+ *   PUT    /portfolio/:id
+ *   DELETE /portfolio/:id
  */
 const KINDS = [
   {
@@ -147,32 +154,35 @@ const KIND_LABEL = KINDS.reduce((acc, k) => {
   return acc;
 }, {});
 
-/** Stable palette for the allocation pie, indexed by slice order. */
-const PIE_COLORS = [
-  '#6366f1', // indigo
-  '#10b981', // emerald
-  '#f59e0b', // amber
-  '#ef4444', // red
-  '#3b82f6', // blue
-  '#8b5cf6', // violet
-  '#ec4899', // pink
-  '#14b8a6', // teal
-];
+const KIND_VISUAL = {
+  fd: { Icon: Landmark, color: '#06b6d4' },
+  bank: { Icon: Building2, color: '#7c6ee8' },
+  mutual_fund: { Icon: TrendingUp, color: '#22c55e' },
+  stock: { Icon: BarChart2, color: '#f59e0b' },
+  crypto: { Icon: Bitcoin, color: '#f59e0b' },
+  ppf_epf: { Icon: PiggyBank, color: '#22c55e' },
+  real_estate: { Icon: Home, color: '#ef4444' },
+  gold: { Icon: Gem, color: '#f59e0b' },
+};
 
-/** Build a blank form for a kind: selects take their default, others ''. */
+const MONEY_KEYS = new Set([
+  'principal',
+  'currentValue',
+  'buyPrice',
+  'currentPrice',
+  'currentBalance',
+  'yearlyContribution',
+]);
+
 function emptyFormFor(config) {
   const form = {};
   for (const field of config.fields) {
-    if (field.type === 'select') {
-      form[field.key] = field.default ?? field.options[0];
-    } else {
-      form[field.key] = field.default ?? '';
-    }
+    if (field.type === 'select') form[field.key] = field.default ?? field.options[0];
+    else form[field.key] = field.default ?? '';
   }
   return form;
 }
 
-/** Populate a form from an existing item, stringifying numbers and dates. */
 function formFromItem(config, item) {
   const form = {};
   for (const field of config.fields) {
@@ -190,8 +200,95 @@ function formFromItem(config, item) {
   return form;
 }
 
+function shortMonthYear(value) {
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+}
+
+function fdMaturity(item) {
+  if (!item.startDate || item.tenureMonths == null) return null;
+  const d = new Date(item.startDate);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setMonth(d.getMonth() + Number(item.tenureMonths));
+  return d;
+}
+
+function daysUntilDate(d) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const t = new Date(d);
+  t.setHours(0, 0, 0, 0);
+  return Math.round((t - today) / 86400000);
+}
+
+/** Metric column definitions per kind (everything except name + actions). */
+function metricDefs(kind) {
+  switch (kind) {
+    case 'fd':
+      return [
+        { label: 'Interest', align: 'right', render: (i) => (i.interestRate != null ? `${i.interestRate}%` : '—') },
+        { label: 'Principal', align: 'right', money: true, get: (i) => i.principal },
+        { label: 'Maturity Value', align: 'right', money: true, get: (i) => i.currentValue },
+        { label: 'Maturity', align: 'right', maturity: true },
+      ];
+    case 'bank':
+      return [
+        { label: 'Account Type', align: 'left', render: (i) => i.accountType || '—' },
+        { label: 'Balance', align: 'right', money: true, get: (i) => i.currentValue ?? i.currentBalance, color: () => 'var(--green)' },
+      ];
+    case 'ppf_epf':
+      return [
+        { label: 'Account Type', align: 'left', render: (i) => i.accountType || '—' },
+        { label: 'Corpus', align: 'right', money: true, get: (i) => i.currentValue ?? i.currentBalance },
+      ];
+    case 'real_estate':
+      return [
+        { label: 'Purchase', align: 'right', money: true, get: (i) => i.invested ?? i.principal },
+        { label: 'Current Value', align: 'right', money: true, get: (i) => i.currentValue },
+        { label: 'Gain/Loss', align: 'right', money: true, signed: true, get: (i) => i.returns, color: (i) => (i.returns >= 0 ? 'var(--green)' : 'var(--red)') },
+      ];
+    case 'gold':
+      return [
+        { label: 'Grams', align: 'right', render: (i) => i.units ?? '—' },
+        { label: 'Buy/g', align: 'right', money: true, get: (i) => i.buyPrice },
+        { label: 'Current Value', align: 'right', money: true, get: (i) => i.currentValue },
+      ];
+    default:
+      return [
+        { label: 'Units', align: 'right', render: (i) => i.units ?? '—' },
+        { label: 'Buy Price', align: 'right', money: true, get: (i) => i.buyPrice },
+        { label: 'Current Value', align: 'right', money: true, get: (i) => i.currentValue },
+        { label: 'P&L', align: 'right', money: true, signed: true, get: (i) => i.returns, color: (i) => (i.returns >= 0 ? 'var(--green)' : 'var(--red)') },
+      ];
+  }
+}
+
+/** Resolve a metric def to a { text, color } pair for an item. */
+function renderMetric(def, item, format) {
+  if (def.maturity) {
+    const m = fdMaturity(item);
+    if (!m) return { text: '—', color: 'var(--text-primary)' };
+    const d = daysUntilDate(m);
+    const soon = d >= 0 && d <= 30;
+    return { text: shortMonthYear(m), color: soon ? 'var(--amber)' : 'var(--text-primary)' };
+  }
+  if (def.render) return { text: String(def.render(item)), color: 'var(--text-primary)' };
+  const raw = def.get ? def.get(item) : undefined;
+  if (raw === null || raw === undefined || raw === '') return { text: '—', color: 'var(--text-muted)' };
+  const color = def.color ? def.color(item) : 'var(--text-primary)';
+  if (def.money) {
+    if (def.signed) {
+      const n = Number(raw) || 0;
+      return { text: `${n >= 0 ? '+' : '-'}${format(Math.abs(n))}`, color };
+    }
+    return { text: format(raw), color };
+  }
+  return { text: String(raw), color };
+}
+
 export default function Portfolio() {
-  const { displayCurrency, format } = useDisplayCurrency();
+  const { format } = useDisplayCurrency();
   const { isMobile } = useWindowSize();
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -224,12 +321,8 @@ export default function Portfolio() {
   // After the page's own fetch effect so snapshots don't pre-empt it.
   const { snapshots } = useSnapshots();
 
-  const config = useMemo(
-    () => KINDS.find((k) => k.kind === activeKind) ?? KINDS[0],
-    [activeKind],
-  );
+  const config = useMemo(() => KINDS.find((k) => k.kind === activeKind) ?? KINDS[0], [activeKind]);
 
-  // Group computed items by kind for the per-section tables.
   const itemsByKind = useMemo(() => {
     const map = {};
     for (const k of KINDS) map[k.kind] = [];
@@ -245,6 +338,7 @@ export default function Portfolio() {
       (summary?.allocation ?? []).map((slice) => ({
         name: KIND_LABEL[slice.kind] ?? slice.kind,
         value: slice.value,
+        amount: slice.value,
         percent: slice.percent,
       })),
     [summary],
@@ -276,9 +370,7 @@ export default function Portfolio() {
       const raw = form[field.key];
       if (raw === '' || raw === undefined || raw === null) continue;
       const n = Number(raw);
-      if (!Number.isFinite(n) || n < 0) {
-        return `${field.label} must be a valid number.`;
-      }
+      if (!Number.isFinite(n) || n < 0) return `${field.label} must be a valid number.`;
     }
     return null;
   }
@@ -298,14 +390,10 @@ export default function Portfolio() {
       for (const field of config.fields) {
         const raw = form[field.key];
         if (field.type === 'number') {
-          if (raw !== '' && raw !== undefined && raw !== null) {
-            payload[field.key] = Number(raw);
-          }
+          if (raw !== '' && raw !== undefined && raw !== null) payload[field.key] = Number(raw);
         } else if (field.type === 'date') {
           if (raw) payload[field.key] = raw;
         } else {
-          // Free-text (text fields like name/symbol/notes). Sanitize before
-          // sending; select/enum values use the branch above and are left as-is.
           payload[field.key] = typeof raw === 'string' ? sanitizeInput(raw.trim()) : raw;
         }
       }
@@ -336,323 +424,548 @@ export default function Portfolio() {
 
   if (loading) return <PortfolioSkeleton />;
 
+  const items = summary?.items ?? [];
+  const isEmpty = items.length === 0;
+
+  // Quick stats counts.
+  const counts = {};
+  for (const it of items) counts[it.kind] = (counts[it.kind] || 0) + 1;
+  const quickStats = [
+    { label: 'Fixed Deposits', n: counts.fd || 0 },
+    { label: 'Bank Accounts', n: counts.bank || 0 },
+    { label: 'Mutual Funds', n: counts.mutual_fund || 0 },
+    { label: 'Stocks & Crypto', n: (counts.stock || 0) + (counts.crypto || 0) },
+    { label: 'PPF / EPF', n: counts.ppf_epf || 0 },
+    { label: 'Real Estate', n: counts.real_estate || 0 },
+    { label: 'Gold', n: counts.gold || 0 },
+  ].filter((s) => s.n > 0);
+
   return (
-    <section className="space-y-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold sm:text-2xl" style={{ color: 'var(--text-primary)' }}>
-            Portfolio
-          </h1>
-          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-            Every holding in one place. Invested amount, current value, and returns computed per request.
-          </p>
-        </div>
-      </header>
+    <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+      {/* Header */}
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.3px' }}>
+          Portfolio
+        </h1>
+        <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
+          Your complete wealth picture
+        </p>
+      </div>
 
       {error && (
-        <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p
+          role="alert"
+          style={{
+            background: 'var(--red-muted)',
+            color: 'var(--red)',
+            borderRadius: 'var(--radius-md)',
+            padding: '8px 12px',
+            fontSize: 13,
+            marginBottom: 20,
+          }}
+        >
           {error}
         </p>
       )}
 
-      {snapshots.length >= 2 && (
-        <AreaChartCard
-          title="Portfolio Value"
-          subtitle="Last 30 days"
-          data={snapshots}
-          dataKey="netWorth"
-          xKey="label"
-          height={isMobile ? 200 : 260}
-        />
-      )}
-
       {summary && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <SummaryCard
-            label="Total value"
-            value={format(summary.totalCurrentValue)}
-          />
-          <SummaryCard
-            label="Total invested"
-            value={format(summary.totalInvested)}
-          />
-          <SummaryCard
-            label="Total returns"
-            value={format(summary.totalReturns)}
-            tone={summary.totalReturns >= 0 ? 'positive' : 'negative'}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
+            gap: 12,
+            marginBottom: 24,
+          }}
+        >
+          <SummaryChip label="Total Value" value={format(summary.totalCurrentValue)} color="var(--text-primary)" />
+          <SummaryChip label="Total Invested" value={format(summary.totalInvested)} color="var(--text-muted)" />
+          <SummaryChip
+            label="Total Returns"
+            value={`${summary.totalReturns >= 0 ? '+' : ''}${format(summary.totalReturns)}`}
+            color={summary.totalReturns >= 0 ? 'var(--green)' : 'var(--red)'}
           />
         </div>
       )}
 
-      {pieData.length > 0 && (
-        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
-            Asset allocation
-          </h2>
-          <div className="mt-2">
-            <DonutChart
-              data={pieData}
-              centerValue={format(summary.totalCurrentValue)}
-              centerLabel="Total"
-              valueFormatter={(n) => format(n)}
-            />
-          </div>
+      {/* Portfolio trend */}
+      {snapshots.length >= 2 && (
+        <SectionCard style={{ marginBottom: 24 }}>
+          <CardHeader title="Portfolio Value" subtitle="Last 30 days" />
+          <AreaChartCard data={snapshots} dataKey="netWorth" xKey="label" height={isMobile ? 180 : 240} card={false} />
+        </SectionCard>
+      )}
+
+      {/* Allocation + quick stats */}
+      {!isEmpty && (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+            gap: 20,
+            marginBottom: 24,
+          }}
+        >
+          <SectionCard>
+            <CardHeader title="Asset Allocation" subtitle="By asset type" />
+            {pieData.length > 0 ? (
+              <DonutChart
+                data={pieData}
+                centerValue={format(summary.totalCurrentValue)}
+                centerLabel="Total"
+                height={isMobile ? 200 : 240}
+                valueFormatter={(n) => format(n)}
+              />
+            ) : (
+              <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>No allocation data.</div>
+            )}
+          </SectionCard>
+
+          <SectionCard>
+            <CardHeader title="Quick Stats" />
+            <div>
+              {quickStats.map((s, idx) => (
+                <div
+                  key={s.label}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '10px 0',
+                    borderBottom: idx === quickStats.length - 1 ? 'none' : '1px solid var(--border-subtle)',
+                  }}
+                >
+                  <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{s.label}</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: 'var(--text-primary)' }}>
+                    {s.n}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </SectionCard>
         </div>
       )}
 
-      {loading ? (
-        <p className="text-sm text-slate-500">Loading…</p>
-      ) : (summary?.items ?? []).length === 0 ? (
-        <EmptyState
-          message="Portfolio is empty. Add your assets."
-          actionLabel="Add holding"
-          onAction={() => openCreate('stock')}
-        />
+      {/* Empty state or sections */}
+      {isEmpty ? (
+        <EmptyState onAdd={openCreate} />
       ) : (
-        <div className="space-y-6">
-          {KINDS.map((cfg) => (
+        KINDS.map((cfg) => {
+          const kindItems = itemsByKind[cfg.kind] ?? [];
+          if (kindItems.length === 0) return null;
+          return (
             <KindSection
               key={cfg.kind}
               config={cfg}
-              items={itemsByKind[cfg.kind] ?? []}
+              items={kindItems}
+              isMobile={isMobile}
               format={format}
               onAdd={() => openCreate(cfg.kind)}
               onEdit={openEdit}
               onDelete={handleDelete}
             />
-          ))}
-        </div>
+          );
+        })
       )}
 
+      {/* Add / edit modal */}
       <Modal
         open={modalOpen}
-        title={editing ? `Edit ${config.singular}` : `New ${config.singular}`}
         onClose={() => setModalOpen(false)}
-        footer={
-          <>
-            <button
-              type="button"
-              onClick={() => setModalOpen(false)}
-              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              form="portfolio-form"
-              disabled={submitting}
-              className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:bg-indigo-400"
-            >
-              {submitting ? 'Saving…' : 'Save'}
-            </button>
-          </>
-        }
+        title={editing ? `Edit ${config.singular}` : `Add ${config.singular}`}
       >
-        <form id="portfolio-form" onSubmit={handleSubmit} className="space-y-3">
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {formError && (
-            <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+            <p
+              role="alert"
+              style={{
+                background: 'var(--red-muted)',
+                color: 'var(--red)',
+                borderRadius: 'var(--radius-md)',
+                padding: '8px 12px',
+                fontSize: 13,
+              }}
+            >
               {formError}
             </p>
           )}
-          {config.fields.map((field) => (
-            <Field
-              key={field.key}
-              label={field.label}
-              htmlFor={`pf-${field.key}`}
-            >
-              {field.type === 'select' ? (
-                <select
-                  id={`pf-${field.key}`}
-                  value={form[field.key] ?? ''}
-                  onChange={(e) => setForm({ ...form, [field.key]: e.target.value })}
-                  className={inputClass}
-                >
-                  {field.options.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  id={`pf-${field.key}`}
-                  type={field.type}
-                  {...(field.type === 'number' ? { step: 'any', min: '0' } : {})}
-                  {...(field.required ? { required: true, maxLength: 100 } : {})}
-                  value={form[field.key] ?? ''}
-                  onChange={(e) => setForm({ ...form, [field.key]: e.target.value })}
-                  className={inputClass}
-                />
-              )}
-            </Field>
-          ))}
+          {config.fields.map((field) =>
+            field.type === 'select' ? (
+              <StyledSelect
+                key={field.key}
+                label={field.label}
+                value={form[field.key] ?? ''}
+                onChange={(e) => setForm({ ...form, [field.key]: e.target.value })}
+                options={field.options}
+              />
+            ) : (
+              <Input
+                key={field.key}
+                label={field.label}
+                type={field.type}
+                {...(MONEY_KEYS.has(field.key) ? { prefix: '₹' } : {})}
+                {...(field.type === 'number' ? { step: 'any', min: '0' } : {})}
+                {...(field.required ? { required: true, maxLength: 100 } : {})}
+                value={form[field.key] ?? ''}
+                onChange={(e) => setForm({ ...form, [field.key]: e.target.value })}
+              />
+            ),
+          )}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 }}>
+            <Button variant="secondary" onClick={() => setModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" type="submit" loading={submitting}>
+              Save
+            </Button>
+          </div>
         </form>
       </Modal>
-    </section>
+    </div>
   );
 }
 
-function KindSection({ config, items, format, onAdd, onEdit, onDelete }) {
+/* ── Section + helpers ─────────────────────────────────────────────────────*/
+
+function KindSection({ config, items, isMobile, format, onAdd, onEdit, onDelete }) {
+  const { Icon, color } = KIND_VISUAL[config.kind] ?? { Icon: Briefcase, color: '#a1a1aa' };
+  const defs = metricDefs(config.kind);
+  const sectionTotal = items.reduce((s, i) => s + (Number(i.currentValue) || 0), 0);
+
   return (
-    <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-        <h2 className="text-base font-semibold text-slate-900">{config.label}</h2>
-        <button
-          type="button"
-          onClick={onAdd}
-          className="flex min-h-[40px] items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-medium text-white shadow-sm hover:bg-indigo-700"
+    <div style={{ marginTop: 28 }}>
+      {/* Section header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+        <span
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: `color-mix(in srgb, ${color} 12%, transparent)`,
+            color,
+            flexShrink: 0,
+          }}
         >
-          Add
-        </button>
+          <Icon size={18} strokeWidth={1.75} />
+        </span>
+        <h2 style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)' }}>{config.label}</h2>
+        <span
+          style={{
+            marginLeft: 'auto',
+            fontSize: 14,
+            fontWeight: 600,
+            fontVariantNumeric: 'tabular-nums',
+            color: 'var(--text-primary)',
+          }}
+        >
+          {format(sectionTotal)}
+        </span>
+        <Button variant="ghost" size="sm" onClick={onAdd}>
+          <Plus size={16} strokeWidth={2} />
+          {!isMobile && `Add ${config.singular}`}
+        </Button>
       </div>
 
-      {items.length === 0 ? (
-        <p className="px-4 py-4 text-sm text-slate-500">No {config.label.toLowerCase()} yet.</p>
+      {/* Items */}
+      {isMobile ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {items.map((item) => (
+            <div
+              key={item._id}
+              style={{
+                background: 'var(--bg-surface)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-lg)',
+                padding: 14,
+                boxShadow: 'var(--shadow-sm)',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: 14,
+                      fontWeight: 600,
+                      color: 'var(--text-primary)',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {item.name}
+                  </div>
+                  {(item.symbol || item.accountType) && (
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                      {item.symbol || item.accountType}
+                    </div>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+                  <IconBtn icon={Pencil} label="Edit" onClick={() => onEdit(item)} />
+                  <IconBtn icon={Trash2} label="Delete" danger onClick={() => onDelete(item)} />
+                </div>
+              </div>
+              <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {defs.map((def) => {
+                  const { text, color: c } = renderMetric(def, item, format);
+                  return (
+                    <div key={def.label} style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{def.label}</span>
+                      <span style={{ fontSize: 13, fontWeight: 500, fontVariantNumeric: 'tabular-nums', color: c }}>
+                        {text}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
       ) : (
-        <>
-          {/* Desktop / tablet: table */}
-          <div className="hidden overflow-x-auto md:block">
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
-              <thead className="bg-slate-50">
-                <tr>
-                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Name
-                  </th>
-                  <th className="px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Invested
-                  </th>
-                  <th className="px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Value
-                  </th>
-                  <th className="px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Returns
-                  </th>
-                  <th className="px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 bg-white">
-                {items.map((item) => (
-                  <tr key={item._id}>
-                    <td className="px-4 py-2">
-                      <div className="font-medium text-slate-900">{item.name}</div>
-                      {item.symbol && <div className="text-xs text-slate-500">{item.symbol}</div>}
-                      {!item.symbol && item.accountType && (
-                        <div className="text-xs text-slate-500">{item.accountType}</div>
-                      )}
-                    </td>
-                    <td className="px-4 py-2 text-right tabular-nums">
-                      {format(item.invested)}
-                    </td>
-                    <td className="px-4 py-2 text-right tabular-nums">
-                      {format(item.currentValue)}
-                    </td>
-                    <td
-                      className={`px-4 py-2 text-right tabular-nums ${
-                        item.returns >= 0 ? 'text-emerald-600' : 'text-red-600'
-                      }`}
-                    >
-                      {format(item.returns)}
-                    </td>
-                    <td className="px-4 py-2 text-right">
-                      <div className="flex justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => onEdit(item)}
-                          className="text-xs font-medium text-indigo-600 hover:underline"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onDelete(item)}
-                          className="text-xs font-medium text-red-600 hover:underline"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+        <div
+          style={{
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-lg)',
+            overflow: 'hidden',
+            boxShadow: 'var(--shadow-sm)',
+          }}
+        >
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border)' }}>
+                <Th>Name</Th>
+                {defs.map((d) => (
+                  <Th key={d.label} align={d.align}>
+                    {d.label}
+                  </Th>
                 ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Mobile: scrollable card list */}
-          <ul className="max-h-[70vh] space-y-3 overflow-y-auto p-3 md:hidden">
-            {items.map((item) => (
-              <li
-                key={item._id}
-                className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="truncate font-medium text-slate-900">{item.name}</div>
+                <Th align="right">Actions</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item, idx) => (
+                <tr
+                  key={item._id}
+                  className="tx-row"
+                  style={{ borderBottom: idx === items.length - 1 ? 'none' : '1px solid var(--border-subtle)' }}
+                >
+                  <Td>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{item.name}</div>
                     {(item.symbol || item.accountType) && (
-                      <div className="truncate text-xs text-slate-500">
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                         {item.symbol || item.accountType}
                       </div>
                     )}
-                  </div>
-                  <div
-                    className={`shrink-0 text-right text-base font-semibold tabular-nums whitespace-nowrap ${
-                      item.returns >= 0 ? 'text-emerald-600' : 'text-red-600'
-                    }`}
-                  >
-                    {format(item.returns)}
-                    <div className="text-xs font-normal text-slate-400">returns</div>
-                  </div>
-                </div>
-                <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-600">
-                  <div>
-                    <span className="text-slate-400">Invested </span>
-                    <span className="tabular-nums">{format(item.invested)}</span>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-slate-400">Value </span>
-                    <span className="tabular-nums">{format(item.currentValue)}</span>
-                  </div>
-                </div>
-                <div className="mt-3 flex gap-2 border-t border-slate-100 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => onEdit(item)}
-                    className="flex min-h-[44px] flex-1 items-center justify-center rounded-md border border-slate-300 text-sm font-medium text-indigo-600 hover:bg-slate-50"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onDelete(item)}
-                    className="flex min-h-[44px] flex-1 items-center justify-center rounded-md border border-slate-300 text-sm font-medium text-red-600 hover:bg-red-50"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </>
+                  </Td>
+                  {defs.map((def) => {
+                    const { text, color: c } = renderMetric(def, item, format);
+                    return (
+                      <Td key={def.label} align={def.align} style={{ fontVariantNumeric: 'tabular-nums', color: c, fontWeight: def.signed ? 600 : 400 }}>
+                        {text}
+                      </Td>
+                    );
+                  })}
+                  <Td align="right">
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4 }}>
+                      <IconBtn icon={Pencil} label="Edit" onClick={() => onEdit(item)} />
+                      <IconBtn icon={Trash2} label="Delete" danger onClick={() => onDelete(item)} />
+                    </div>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
 }
 
-function SummaryCard({ label, value, tone = 'neutral' }) {
-  const toneClass =
-    tone === 'positive'
-      ? 'text-emerald-600'
-      : tone === 'negative'
-        ? 'text-red-600'
-        : 'text-slate-900';
+function SectionCard({ children, style }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
+    <div
+      style={{
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius-lg)',
+        padding: 20,
+        boxShadow: 'var(--shadow-sm)',
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function CardHeader({ title, subtitle }) {
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)' }}>{title}</div>
+      {subtitle && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{subtitle}</div>}
+    </div>
+  );
+}
+
+function SummaryChip({ label, value, color }) {
+  return (
+    <div
+      style={{
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius-lg)',
+        padding: 16,
+        boxShadow: 'var(--shadow-sm)',
+      }}
+    >
       <div
-        className={`mt-2 break-words text-xl font-semibold leading-tight tabular-nums sm:text-2xl ${toneClass}`}
+        style={{
+          fontSize: 11,
+          fontWeight: 500,
+          textTransform: 'uppercase',
+          letterSpacing: '0.06em',
+          color: 'var(--text-muted)',
+        }}
       >
+        {label}
+      </div>
+      <div style={{ fontSize: 22, fontWeight: 700, fontVariantNumeric: 'tabular-nums', color, marginTop: 4 }}>
         {value}
+      </div>
+    </div>
+  );
+}
+
+function StyledSelect({ label, value, onChange, options }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)' }}>{label}</label>
+      <select
+        value={value}
+        onChange={onChange}
+        style={{
+          width: '100%',
+          background: 'var(--bg-elevated)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-md)',
+          padding: '11px 14px',
+          fontFamily: 'Poppins, system-ui, sans-serif',
+          fontSize: 14,
+          color: 'var(--text-primary)',
+          outline: 'none',
+          textTransform: 'capitalize',
+        }}
+      >
+        {options.map((o) => (
+          <option key={o} value={o}>
+            {o}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function IconBtn({ icon: Icon, onClick, danger, label }) {
+  const [hover, setHover] = useState(false);
+  const color = danger
+    ? hover
+      ? 'var(--red)'
+      : 'var(--text-muted)'
+    : hover
+      ? 'var(--text-primary)'
+      : 'var(--text-muted)';
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        width: 32,
+        height: 32,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: 'var(--radius-md)',
+        border: 'none',
+        cursor: 'pointer',
+        background: hover ? 'var(--bg-hover)' : 'transparent',
+        color,
+        flexShrink: 0,
+        transition: 'all 150ms var(--ease)',
+      }}
+    >
+      <Icon size={15} strokeWidth={1.75} />
+    </button>
+  );
+}
+
+function Th({ children, align = 'left' }) {
+  return (
+    <th
+      style={{
+        fontSize: 11,
+        fontWeight: 500,
+        textTransform: 'uppercase',
+        letterSpacing: '0.06em',
+        color: 'var(--text-muted)',
+        padding: '12px 16px',
+        textAlign: align,
+      }}
+    >
+      {children}
+    </th>
+  );
+}
+
+function Td({ children, align = 'left', style }) {
+  return <td style={{ padding: '14px 16px', textAlign: align, ...style }}>{children}</td>;
+}
+
+function EmptyState({ onAdd }) {
+  return (
+    <div
+      style={{
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius-lg)',
+        boxShadow: 'var(--shadow-sm)',
+        padding: '60px 20px',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        textAlign: 'center',
+      }}
+    >
+      <Briefcase size={48} strokeWidth={1.5} color="var(--text-muted)" />
+      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-secondary)', marginTop: 12 }}>
+        Your portfolio is empty
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
+        Add your FDs, bank accounts, mutual funds, stocks and more
+      </div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', marginTop: 16 }}>
+        <Button variant="ghost" size="sm" onClick={() => onAdd('fd')}>
+          <Plus size={14} strokeWidth={2} />
+          FD
+        </Button>
+        <Button variant="ghost" size="sm" onClick={() => onAdd('bank')}>
+          <Plus size={14} strokeWidth={2} />
+          Bank
+        </Button>
+        <Button variant="ghost" size="sm" onClick={() => onAdd('stock')}>
+          <Plus size={14} strokeWidth={2} />
+          Stock
+        </Button>
+        <Button variant="ghost" size="sm" onClick={() => onAdd('crypto')}>
+          <Plus size={14} strokeWidth={2} />
+          Crypto
+        </Button>
       </div>
     </div>
   );
