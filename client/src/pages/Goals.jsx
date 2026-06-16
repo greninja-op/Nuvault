@@ -524,7 +524,13 @@ function GoalCard({ goal, format, onAddMoney, onDelete }) {
             Goal Achieved! 🎉
           </Button>
         ) : (
-          <Button variant="secondary" size="sm" fullWidth onClick={onAddMoney}>
+          <Button
+            variant="secondary"
+            size="sm"
+            fullWidth
+            onClick={onAddMoney}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+          >
             <PlusCircle size={15} strokeWidth={2} />
             Add Money
           </Button>
