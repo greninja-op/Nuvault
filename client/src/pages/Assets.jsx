@@ -1,26 +1,48 @@
 import { useEffect, useState } from 'react';
+import {
+  AlertTriangle,
+  BarChart2,
+  Bitcoin,
+  Home,
+  Landmark,
+  Package,
+  Pencil,
+  PiggyBank,
+  Plus,
+  TrendingUp,
+  Trash2,
+  Wallet,
+} from 'lucide-react';
 import apiClient from '../api/client';
-import Field, { inputClass } from '../components/Field';
-import Modal from '../components/Modal';
 import { useDisplayCurrency } from '../currency/CurrencyContext';
-import { extractError, formatCurrency } from '../lib/format';
+import { extractError } from '../lib/format';
+import Input from '../components/ui/Input';
+import Button from '../components/ui/Button';
+import Badge from '../components/ui/Badge';
+import Modal from '../components/ui/Modal';
 
-const ASSET_TYPES = [
-  'cash',
-  'bank',
-  'stock',
-  'crypto',
-  'mutual_fund',
-  'fd',
-  'real_estate',
-  'other',
-];
+const ASSET_TYPES = ['cash', 'bank', 'stock', 'crypto', 'mutual_fund', 'fd', 'real_estate', 'other'];
+
+const TYPE_META = {
+  cash: { Icon: Wallet, color: '#16a34a', label: 'Cash' },
+  bank: { Icon: Landmark, color: '#06b6d4', label: 'Bank' },
+  stock: { Icon: BarChart2, color: '#f59e0b', label: 'Stock' },
+  crypto: { Icon: Bitcoin, color: '#f59e0b', label: 'Crypto' },
+  mutual_fund: { Icon: TrendingUp, color: '#22c55e', label: 'Mutual Fund' },
+  fd: { Icon: PiggyBank, color: '#06b6d4', label: 'Fixed Deposit' },
+  real_estate: { Icon: Home, color: '#ef4444', label: 'Real Estate' },
+  other: { Icon: Package, color: '#a1a1aa', label: 'Other' },
+};
+
+function typeMeta(type) {
+  return TYPE_META[type] ?? { Icon: Package, color: '#a1a1aa', label: type || 'Other' };
+}
 
 const EMPTY_FORM = { name: '', type: 'cash', value: '', currency: 'INR', notes: '' };
 
 /**
- * Assets list with create/edit/delete via a modal form. Backend endpoints:
- *   GET/POST/PUT/DELETE /assets — see assetController.
+ * Assets list with create/edit/delete via a modal form.
+ * Backend endpoints (unchanged): GET/POST/PUT/DELETE /assets.
  */
 export default function Assets() {
   const { displayCurrency, format } = useDisplayCurrency();
@@ -33,6 +55,9 @@ export default function Assets() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [formError, setFormError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -115,236 +140,426 @@ export default function Assets() {
     }
   }
 
-  async function handleDelete(asset) {
-    if (typeof window !== 'undefined' && !window.confirm(`Delete ${asset.name}?`)) {
-      return;
-    }
+  async function confirmDelete() {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
     try {
-      await apiClient.delete(`/assets/${asset._id}`);
+      await apiClient.delete(`/assets/${deleteTarget._id}`);
+      setDeleteTarget(null);
       await load();
     } catch (err) {
       setError(extractError(err, 'Unable to delete asset'));
+    } finally {
+      setDeleting(false);
     }
   }
 
+  const totalValue = items.reduce((s, a) => s + (Number(a.value) || 0), 0);
+
+  if (loading) {
+    return (
+      <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+        <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>Loading…</p>
+      </div>
+    );
+  }
+
   return (
-    <section className="space-y-4">
-      <header className="flex items-center justify-between gap-3">
+    <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+      {/* Header */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 12,
+          marginBottom: 24,
+          flexWrap: 'wrap',
+        }}
+      >
         <div>
-          <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Assets</h1>
-          <p className="text-sm text-slate-600">Things you own.</p>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.3px' }}>
+            Assets
+          </h1>
+          <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 4 }}>
+            Everything you own, all in one place.
+          </p>
         </div>
-        <button
-          type="button"
-          onClick={openCreate}
-          className="flex min-h-[44px] shrink-0 items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-medium text-white shadow-sm hover:bg-indigo-700"
-        >
+        <Button variant="primary" onClick={openCreate}>
+          <Plus size={16} strokeWidth={2} />
           New asset
-        </button>
-      </header>
+        </Button>
+      </div>
 
       {error && (
-        <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p
+          role="alert"
+          style={{
+            background: 'var(--red-muted)',
+            color: 'var(--red)',
+            borderRadius: 'var(--radius-md)',
+            padding: '8px 12px',
+            fontSize: 13,
+            marginBottom: 20,
+          }}
+        >
           {error}
         </p>
       )}
 
-      {loading ? (
-        <p className="text-sm text-slate-500">Loading…</p>
-      ) : items.length === 0 ? (
-        <p className="text-sm text-slate-500">No assets yet. Click "New asset" to add one.</p>
+      {items.length === 0 ? (
+        <EmptyState onAdd={openCreate} />
       ) : (
         <>
-          {/* Desktop / tablet: table */}
-          <div className="hidden overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm md:block">
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
-              <thead className="bg-slate-50">
-                <tr>
-                  <Th>Name</Th>
+          {/* Summary card */}
+          <div
+            style={{
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-lg)',
+              padding: 20,
+              boxShadow: 'var(--shadow-sm)',
+              marginBottom: 24,
+            }}
+          >
+            <div className="text-label">Total Assets</div>
+            <div style={{ fontSize: 24, fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: 'var(--green)', marginTop: 6 }}>
+              {format(totalValue)}
+            </div>
+            <div className="text-caption" style={{ marginTop: 2 }}>
+              {items.length} asset{items.length === 1 ? '' : 's'} tracked
+            </div>
+          </div>
+
+          {/* Desktop table */}
+          <div
+            className="hidden md:block"
+            style={{
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-lg)',
+              overflow: 'hidden',
+              boxShadow: 'var(--shadow-sm)',
+            }}
+          >
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                  <Th>Asset</Th>
                   <Th>Type</Th>
                   <Th align="right">Value</Th>
-                  <Th>Currency</Th>
                   <Th align="right">Actions</Th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 bg-white">
-                {items.map((asset) => (
-                  <tr key={asset._id}>
-                    <Td>{asset.name}</Td>
-                    <Td className="text-slate-600">{asset.type}</Td>
-                    <Td align="right">{format(asset.value)}</Td>
-                    <Td className="text-slate-600">{asset.currency || 'INR'}</Td>
-                    <Td align="right">
-                      <RowActions onEdit={() => openEdit(asset)} onDelete={() => handleDelete(asset)} />
-                    </Td>
-                  </tr>
-                ))}
+              <tbody>
+                {items.map((asset, idx) => {
+                  const meta = typeMeta(asset.type);
+                  return (
+                    <tr
+                      key={asset._id}
+                      className="tx-row"
+                      style={{ borderBottom: idx === items.length - 1 ? 'none' : '1px solid var(--border-subtle)' }}
+                    >
+                      <Td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <TypeIcon meta={meta} />
+                          <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>
+                            {asset.name}
+                          </span>
+                        </div>
+                      </Td>
+                      <Td>
+                        <Badge variant="default">{meta.label}</Badge>
+                      </Td>
+                      <Td align="right" style={{ fontSize: 14, fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: 'var(--green)' }}>
+                        {format(asset.value)}
+                      </Td>
+                      <Td align="right">
+                        <span className="tx-actions" style={{ display: 'inline-flex', gap: 4 }}>
+                          <IconBtn icon={Pencil} label="Edit" small onClick={() => openEdit(asset)} />
+                          <IconBtn icon={Trash2} label="Delete" small danger onClick={() => setDeleteTarget(asset)} />
+                        </span>
+                      </Td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
 
-          {/* Mobile: card list */}
-          <ul className="space-y-3 md:hidden">
-            {items.map((asset) => (
-              <li
-                key={asset._id}
-                className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="truncate font-medium text-slate-900">{asset.name}</div>
-                    <div className="text-xs text-slate-500">{asset.type}</div>
-                  </div>
-                  <div className="shrink-0 text-right text-base font-semibold text-slate-900 tabular-nums whitespace-nowrap">
-                    {format(asset.value)}
-                    <div className="text-xs font-normal text-slate-500">
-                      {asset.currency || 'INR'}
+          {/* Mobile cards */}
+          <div className="md:hidden" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {items.map((asset) => {
+              const meta = typeMeta(asset.type);
+              return (
+                <div
+                  key={asset._id}
+                  style={{
+                    background: 'var(--bg-surface)',
+                    border: '1px solid var(--border)',
+                    borderLeft: `4px solid ${meta.color}`,
+                    borderRadius: 'var(--radius-lg)',
+                    padding: '14px 16px',
+                    boxShadow: 'var(--shadow-sm)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                  }}
+                >
+                  <TypeIcon meta={meta} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 500,
+                        color: 'var(--text-primary)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {asset.name}
                     </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{meta.label}</div>
                   </div>
+                  <span style={{ fontSize: 15, fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: 'var(--green)', whiteSpace: 'nowrap' }}>
+                    {format(asset.value)}
+                  </span>
+                  <IconBtn icon={Pencil} label="Edit" small onClick={() => openEdit(asset)} />
+                  <IconBtn icon={Trash2} label="Delete" small danger onClick={() => setDeleteTarget(asset)} />
                 </div>
-                <div className="mt-3 flex gap-2 border-t border-slate-100 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => openEdit(asset)}
-                    className="flex min-h-[44px] flex-1 items-center justify-center rounded-md border border-slate-300 text-sm font-medium text-indigo-600 hover:bg-slate-50"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(asset)}
-                    className="flex min-h-[44px] flex-1 items-center justify-center rounded-md border border-slate-300 text-sm font-medium text-red-600 hover:bg-red-50"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
+              );
+            })}
+          </div>
         </>
       )}
 
-      <Modal
-        open={modalOpen}
-        title={editing ? 'Edit asset' : 'New asset'}
-        onClose={() => setModalOpen(false)}
-        footer={
-          <>
-            <button
-              type="button"
-              onClick={() => setModalOpen(false)}
-              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              form="asset-form"
-              disabled={submitting}
-              className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:bg-indigo-400"
-            >
-              {submitting ? 'Saving…' : 'Save'}
-            </button>
-          </>
-        }
-      >
-        <form id="asset-form" onSubmit={handleSubmit} className="space-y-3">
+      {/* Add / Edit modal */}
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Edit Asset' : 'New Asset'}>
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {formError && (
-            <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+            <p
+              role="alert"
+              style={{
+                background: 'var(--red-muted)',
+                color: 'var(--red)',
+                borderRadius: 'var(--radius-md)',
+                padding: '8px 12px',
+                fontSize: 13,
+              }}
+            >
               {formError}
             </p>
           )}
-          <Field label="Name" htmlFor="asset-name">
-            <input
-              id="asset-name"
-              type="text"
-              required
-              maxLength={100}
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Type" htmlFor="asset-type">
-            <select
-              id="asset-type"
-              value={form.type}
-              onChange={(e) => setForm({ ...form, type: e.target.value })}
-              className={inputClass}
-            >
-              {ASSET_TYPES.map((type) => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Value" htmlFor="asset-value" hint="0.01 to 999,999,999.99">
-            <input
-              id="asset-value"
-              type="number"
-              step="0.01"
-              min="0.01"
-              max="999999999.99"
-              required
-              value={form.value}
-              onChange={(e) => setForm({ ...form, value: e.target.value })}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Currency" htmlFor="asset-currency">
-            <input
-              id="asset-currency"
-              type="text"
-              value={form.currency}
-              onChange={(e) => setForm({ ...form, currency: e.target.value.toUpperCase() })}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Notes" htmlFor="asset-notes">
-            <textarea
-              id="asset-notes"
-              rows={2}
-              value={form.notes}
-              onChange={(e) => setForm({ ...form, notes: e.target.value })}
-              className={inputClass}
-            />
-          </Field>
+          <Input
+            label="Name"
+            type="text"
+            required
+            maxLength={100}
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+          />
+          <StyledSelect
+            label="Type"
+            value={form.type}
+            onChange={(e) => setForm({ ...form, type: e.target.value })}
+            options={ASSET_TYPES.map((t) => ({ value: t, label: typeMeta(t).label }))}
+          />
+          <Input
+            label="Value"
+            prefix="₹"
+            type="number"
+            step="0.01"
+            min="0.01"
+            max="999999999.99"
+            required
+            value={form.value}
+            onChange={(e) => setForm({ ...form, value: e.target.value })}
+          />
+          <Input
+            label="Currency"
+            type="text"
+            value={form.currency}
+            onChange={(e) => setForm({ ...form, currency: e.target.value.toUpperCase() })}
+          />
+          <Input
+            label="Notes"
+            type="text"
+            value={form.notes}
+            onChange={(e) => setForm({ ...form, notes: e.target.value })}
+          />
+          <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+            <Button variant="ghost" fullWidth onClick={() => setModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" fullWidth type="submit" loading={submitting}>
+              Save
+            </Button>
+          </div>
         </form>
       </Modal>
-    </section>
+
+      {/* Delete confirmation */}
+      <Modal open={Boolean(deleteTarget)} onClose={() => setDeleteTarget(null)} title="" maxWidth={360}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 6 }}>
+          <AlertTriangle size={40} strokeWidth={1.75} color="var(--red)" />
+          <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginTop: 6 }}>
+            Delete this asset?
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>This action cannot be undone.</div>
+          <div style={{ display: 'flex', gap: 10, marginTop: 16, width: '100%' }}>
+            <Button variant="secondary" fullWidth onClick={() => setDeleteTarget(null)}>
+              Cancel
+            </Button>
+            <Button variant="danger" fullWidth loading={deleting} onClick={confirmDelete}>
+              Delete
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+/* ── Presentational helpers ────────────────────────────────────────────────*/
+
+function TypeIcon({ meta }) {
+  const { Icon, color } = meta;
+  return (
+    <span
+      style={{
+        width: 32,
+        height: 32,
+        borderRadius: '50%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: `color-mix(in srgb, ${color} 12%, transparent)`,
+        color,
+        flexShrink: 0,
+      }}
+    >
+      <Icon size={16} strokeWidth={1.75} />
+    </span>
+  );
+}
+
+function StyledSelect({ label, value, onChange, options }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)' }}>{label}</label>
+      <select
+        value={value}
+        onChange={onChange}
+        style={{
+          width: '100%',
+          background: 'var(--bg-elevated)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-md)',
+          padding: '11px 14px',
+          fontFamily: 'Poppins, system-ui, sans-serif',
+          fontSize: 14,
+          color: 'var(--text-primary)',
+          outline: 'none',
+        }}
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function IconBtn({ icon: Icon, onClick, danger, label, small }) {
+  const [hover, setHover] = useState(false);
+  const size = small ? 28 : 32;
+  const color = danger
+    ? hover
+      ? 'var(--red)'
+      : 'var(--text-muted)'
+    : hover
+      ? 'var(--text-primary)'
+      : 'var(--text-muted)';
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        width: size,
+        height: size,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: 'var(--radius-md)',
+        border: 'none',
+        cursor: 'pointer',
+        background: hover ? 'var(--bg-hover)' : 'transparent',
+        color,
+        flexShrink: 0,
+        transition: 'all 150ms var(--ease)',
+      }}
+    >
+      <Icon size={15} strokeWidth={1.75} />
+    </button>
   );
 }
 
 function Th({ children, align = 'left' }) {
   return (
-    <th className={`px-4 py-2 text-${align} text-xs font-medium uppercase tracking-wide text-slate-500`}>
+    <th
+      style={{
+        fontSize: 11,
+        fontWeight: 500,
+        textTransform: 'uppercase',
+        letterSpacing: '0.05em',
+        color: 'var(--text-muted)',
+        padding: '12px 16px',
+        textAlign: align,
+      }}
+    >
       {children}
     </th>
   );
 }
 
-function Td({ children, align = 'left', className = '' }) {
-  return <td className={`px-4 py-2 text-${align} ${className}`}>{children}</td>;
+function Td({ children, align = 'left', style }) {
+  return <td style={{ padding: '14px 16px', textAlign: align, ...style }}>{children}</td>;
 }
 
-function RowActions({ onEdit, onDelete }) {
+function EmptyState({ onAdd }) {
   return (
-    <div className="flex justify-end gap-2">
-      <button
-        type="button"
-        onClick={onEdit}
-        className="text-xs font-medium text-indigo-600 hover:underline"
-      >
-        Edit
-      </button>
-      <button
-        type="button"
-        onClick={onDelete}
-        className="text-xs font-medium text-red-600 hover:underline"
-      >
-        Delete
-      </button>
+    <div
+      style={{
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius-lg)',
+        boxShadow: 'var(--shadow-sm)',
+        padding: '60px 20px',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        textAlign: 'center',
+      }}
+    >
+      <Landmark size={48} strokeWidth={1.5} color="var(--text-muted)" />
+      <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginTop: 12 }}>
+        No assets tracked
+      </div>
+      <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 6 }}>
+        Add your savings, investments, or property to see your full financial picture.
+      </div>
+      <div style={{ marginTop: 16 }}>
+        <Button variant="primary" onClick={onAdd}>
+          <Plus size={16} strokeWidth={2} />
+          New asset
+        </Button>
+      </div>
     </div>
   );
 }
