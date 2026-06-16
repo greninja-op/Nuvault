@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react';
 import {
+  AlertTriangle,
   BarChart2,
-  DollarSign,
+  Bitcoin,
+  Package,
   Pencil,
+  PiggyBank,
   Plus,
-  Trash2,
   TrendingDown,
   TrendingUp,
+  Trash2,
+  Wallet,
 } from 'lucide-react';
 import apiClient from '../api/client';
 import { useDisplayCurrency } from '../currency/CurrencyContext';
@@ -14,32 +18,27 @@ import { extractError } from '../lib/format';
 import { sanitizeInput } from '../utils/sanitize';
 import InvestmentsSkeleton from '../components/skeletons/InvestmentsSkeleton';
 import AreaChartCard from '../components/charts/AreaChartCard';
-import DonutChart from '../components/charts/DonutChart';
 import useSnapshots from '../hooks/useSnapshots';
 import useWindowSize from '../hooks/useWindowSize';
 import Input from '../components/ui/Input';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
 import Modal from '../components/ui/Modal';
+import StatCard from '../components/ui/StatCard';
 
 const TYPES = ['stock', 'crypto', 'mutual_fund', 'fd', 'other'];
 
 const TYPE_META = {
-  stock: { label: 'Stock', badge: 'accent' },
-  crypto: { label: 'Crypto', badge: 'warning' },
-  mutual_fund: { label: 'MF', badge: 'default' },
-  fd: { label: 'FD', badge: 'success' },
-  other: { label: 'Other', badge: 'default' },
+  stock: { Icon: BarChart2, color: '#f59e0b', label: 'Stock' },
+  crypto: { Icon: Bitcoin, color: '#f59e0b', label: 'Crypto' },
+  mutual_fund: { Icon: TrendingUp, color: '#22c55e', label: 'Mutual Fund' },
+  fd: { Icon: PiggyBank, color: '#06b6d4', label: 'FD' },
+  other: { Icon: Package, color: '#a1a1aa', label: 'Other' },
 };
 
-const TYPE_FILTERS = [
-  { id: 'all', label: 'All' },
-  { id: 'stock', label: 'Stock' },
-  { id: 'crypto', label: 'Crypto' },
-  { id: 'mutual_fund', label: 'Mutual Fund' },
-  { id: 'fd', label: 'FD' },
-  { id: 'other', label: 'Other' },
-];
+function typeMeta(type) {
+  return TYPE_META[type] ?? { Icon: Package, color: '#a1a1aa', label: type || 'Other' };
+}
 
 const EMPTY_FORM = {
   type: 'stock',
@@ -51,6 +50,11 @@ const EMPTY_FORM = {
   buyDate: '',
   notes: '',
 };
+
+/** Number-or-dash helper for optional numeric cells. */
+function numOrDash(v) {
+  return v === null || v === undefined || v === '' ? '—' : v;
+}
 
 /**
  * Investments list with a P&L summary and create/edit/delete via a modal.
@@ -73,7 +77,8 @@ export default function Investments() {
   const [formError, setFormError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const [activeType, setActiveType] = useState('all');
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -111,9 +116,7 @@ export default function Investments() {
       quantity: String(item.quantity ?? ''),
       buyPrice: String(item.buyPrice ?? ''),
       currentPrice:
-        item.currentPrice === null || item.currentPrice === undefined
-          ? ''
-          : String(item.currentPrice),
+        item.currentPrice === null || item.currentPrice === undefined ? '' : String(item.currentPrice),
       buyDate: item.buyDate ? item.buyDate.slice(0, 10) : '',
       notes: item.notes ?? '',
     });
@@ -175,13 +178,17 @@ export default function Investments() {
     }
   }
 
-  async function handleDelete(item) {
-    if (typeof window !== 'undefined' && !window.confirm(`Delete ${item.name}?`)) return;
+  async function confirmDelete() {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
     try {
-      await apiClient.delete(`/investments/${item._id}`);
+      await apiClient.delete(`/investments/${deleteTarget._id}`);
+      setDeleteTarget(null);
       await load();
     } catch (err) {
       setError(extractError(err, 'Unable to delete investment'));
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -190,22 +197,7 @@ export default function Investments() {
   const totalCurrentValue = Number(summary?.totalCurrentValue) || 0;
   const totalPnL = Number(summary?.totalPnL) || 0;
   const returnPct = totalInvested > 0 ? (totalPnL / totalInvested) * 100 : 0;
-
-  const filtered = activeType === 'all' ? items : items.filter((i) => i.type === activeType);
-
-  // Allocation by type across the whole portfolio (current value).
-  const allocationMap = {};
-  for (const it of items) {
-    const v = Number(it.currentValue) || 0;
-    if (v <= 0) continue;
-    const key = it.type || 'other';
-    allocationMap[key] = (allocationMap[key] || 0) + v;
-  }
-  const allocationData = Object.entries(allocationMap).map(([type, value]) => ({
-    name: TYPE_META[type]?.label ?? type,
-    value,
-    amount: value,
-  }));
+  const pnlPositive = totalPnL >= 0;
 
   if (loading) return <InvestmentsSkeleton />;
 
@@ -219,19 +211,20 @@ export default function Investments() {
           alignItems: 'center',
           gap: 12,
           marginBottom: 24,
+          flexWrap: 'wrap',
         }}
       >
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.3px' }}>
             Investments
           </h1>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
-            Track your wealth growth
+          <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 4 }}>
+            Every holding, every gain and loss, tracked live.
           </p>
         </div>
         <Button variant="primary" onClick={openCreate}>
           <Plus size={16} strokeWidth={2} />
-          Add Investment
+          New investment
         </Button>
       </div>
 
@@ -257,30 +250,23 @@ export default function Investments() {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
-              gap: 12,
+              gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
+              gap: 16,
               marginBottom: 24,
             }}
           >
-            <StatChip label="Total Invested" value={format(totalInvested)} icon={TrendingUp} />
-            <StatChip label="Current Value" value={format(totalCurrentValue)} icon={DollarSign} />
-            <StatChip
+            <StatCard label="Total Invested" value={format(totalInvested)} icon={Wallet} iconColor="var(--accent)" />
+            <StatCard label="Current Value" value={format(totalCurrentValue)} icon={TrendingUp} iconColor="var(--accent)" />
+            <StatCard
               label="Total P&L"
-              value={`${totalPnL >= 0 ? '+' : ''}${format(totalPnL)}`}
-              valueColor={totalPnL >= 0 ? 'var(--green)' : 'var(--red)'}
-              icon={totalPnL >= 0 ? TrendingUp : TrendingDown}
-              iconColor={totalPnL >= 0 ? 'var(--green)' : 'var(--red)'}
-            />
-            <StatChip
-              label="Return %"
-              value={`${returnPct >= 0 ? '+' : ''}${returnPct.toFixed(1)}%`}
-              valueColor={returnPct >= 0 ? 'var(--green)' : 'var(--red)'}
-              icon={returnPct >= 0 ? TrendingUp : TrendingDown}
-              iconColor={returnPct >= 0 ? 'var(--green)' : 'var(--red)'}
+              value={`${pnlPositive ? '+' : '-'}${format(Math.abs(totalPnL))} (${returnPct >= 0 ? '+' : ''}${returnPct.toFixed(1)}%)`}
+              icon={pnlPositive ? TrendingUp : TrendingDown}
+              iconColor={pnlPositive ? 'var(--green)' : 'var(--red)'}
+              valueColor={pnlPositive ? 'var(--green)' : 'var(--red)'}
             />
           </div>
 
-          {/* Portfolio trend chart */}
+          {/* Growth trend chart */}
           {snapshots.length >= 2 && (
             <div
               style={{
@@ -293,20 +279,12 @@ export default function Investments() {
               }}
             >
               <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)' }}>
+                <div className="text-subhead" style={{ color: 'var(--text-primary)' }}>
                   Portfolio Growth
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                  Net worth over last 30 days
-                </div>
+                <div className="text-caption">Net worth over last 30 days</div>
               </div>
-              <AreaChartCard
-                data={snapshots}
-                dataKey="netWorth"
-                xKey="label"
-                height={isMobile ? 180 : 240}
-                card={false}
-              />
+              <AreaChartCard data={snapshots} dataKey="netWorth" xKey="label" height={isMobile ? 180 : 240} card={false} />
             </div>
           )}
         </>
@@ -314,168 +292,99 @@ export default function Investments() {
 
       {items.length === 0 ? (
         <EmptyState onAdd={openCreate} />
+      ) : isMobile ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {items.map((item) => (
+            <InvestmentCard
+              key={item._id}
+              item={item}
+              format={format}
+              onEdit={() => openEdit(item)}
+              onDelete={() => setDeleteTarget(item)}
+            />
+          ))}
+        </div>
       ) : (
-        <>
-          {/* Type filter pills */}
-          <div
-            className="no-scrollbar"
-            style={{ display: 'flex', gap: 8, marginBottom: 20, overflowX: 'auto', paddingBottom: 4 }}
-          >
-            {TYPE_FILTERS.map((f) => (
-              <FilterPill key={f.id} active={activeType === f.id} onClick={() => setActiveType(f.id)}>
-                {f.label}
-              </FilterPill>
-            ))}
-          </div>
-
-          {/* List: table (desktop) or cards (mobile) */}
-          {isMobile ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {filtered.map((item) => (
-                <InvestmentCard
-                  key={item._id}
-                  item={item}
-                  format={format}
-                  onEdit={() => openEdit(item)}
-                  onDelete={() => handleDelete(item)}
-                />
-              ))}
-            </div>
-          ) : (
-            <div
-              style={{
-                background: 'var(--bg-surface)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-lg)',
-                overflow: 'hidden',
-                boxShadow: 'var(--shadow-sm)',
-              }}
-            >
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border)' }}>
-                    <Th>Name</Th>
-                    <Th>Type</Th>
-                    <Th align="right">Qty</Th>
-                    <Th align="right">Buy Price</Th>
-                    <Th align="right">Current</Th>
-                    <Th align="right">P&L</Th>
-                    <Th align="right">Return</Th>
-                    <Th align="right">Actions</Th>
+        <div
+          style={{
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-lg)',
+            overflow: 'hidden',
+            boxShadow: 'var(--shadow-sm)',
+          }}
+        >
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                <Th>Investment</Th>
+                <Th>Type</Th>
+                <Th align="right">Units</Th>
+                <Th align="right">Buy Price</Th>
+                <Th align="right">Current Value</Th>
+                <Th align="right">P&L</Th>
+                <Th align="right">Actions</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item, idx) => {
+                const meta = typeMeta(item.type);
+                const gain = Number(item.gainLoss) || 0;
+                const pct = Number(item.gainLossPercent) || 0;
+                const gainColor = gain >= 0 ? 'var(--green)' : 'var(--red)';
+                return (
+                  <tr
+                    key={item._id}
+                    className="tx-row"
+                    style={{ borderBottom: idx === items.length - 1 ? 'none' : '1px solid var(--border-subtle)' }}
+                  >
+                    <Td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <TypeIcon meta={meta} />
+                        <div>
+                          <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>{item.name}</div>
+                          {item.symbol && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{item.symbol}</div>}
+                        </div>
+                      </div>
+                    </Td>
+                    <Td>
+                      <Badge variant="default">{meta.label}</Badge>
+                    </Td>
+                    <Td align="right" style={{ fontSize: 13, color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>
+                      {numOrDash(item.quantity)}
+                    </Td>
+                    <Td align="right" style={{ fontSize: 13, color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>
+                      {item.buyPrice != null ? format(item.buyPrice) : '—'}
+                    </Td>
+                    <Td align="right" style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
+                      {item.currentValue != null ? format(item.currentValue) : '—'}
+                    </Td>
+                    <Td align="right">
+                      <div style={{ fontSize: 14, fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: gainColor, whiteSpace: 'nowrap' }}>
+                        {gain >= 0 ? '+' : '-'}
+                        {format(Math.abs(gain))}
+                      </div>
+                      <div style={{ fontSize: 12, fontWeight: 500, color: gainColor }}>
+                        ({pct >= 0 ? '+' : ''}
+                        {pct.toFixed(1)}%)
+                      </div>
+                    </Td>
+                    <Td align="right">
+                      <span className="tx-actions" style={{ display: 'inline-flex', gap: 4 }}>
+                        <IconBtn icon={Pencil} label="Edit" small onClick={() => openEdit(item)} />
+                        <IconBtn icon={Trash2} label="Delete" small danger onClick={() => setDeleteTarget(item)} />
+                      </span>
+                    </Td>
                   </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((item, idx) => {
-                    const meta = TYPE_META[item.type] ?? { label: item.type, badge: 'default' };
-                    const gain = Number(item.gainLoss) || 0;
-                    const pct = Number(item.gainLossPercent) || 0;
-                    const hasCurrent = item.currentPrice !== null && item.currentPrice !== undefined;
-                    const TrendIcon = pct >= 0 ? TrendingUp : TrendingDown;
-                    return (
-                      <tr
-                        key={item._id}
-                        className="tx-row"
-                        style={{
-                          borderBottom:
-                            idx === filtered.length - 1 ? 'none' : '1px solid var(--border-subtle)',
-                        }}
-                      >
-                        <Td>
-                          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
-                            {item.name}
-                          </div>
-                          {item.symbol && (
-                            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{item.symbol}</div>
-                          )}
-                        </Td>
-                        <Td>
-                          <Badge variant={meta.badge}>{meta.label}</Badge>
-                        </Td>
-                        <Td align="right" style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--text-primary)' }}>
-                          {item.quantity}
-                        </Td>
-                        <Td align="right" style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--text-muted)' }}>
-                          {format(item.buyPrice)}
-                        </Td>
-                        <Td
-                          align="right"
-                          style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: 'var(--text-primary)' }}
-                        >
-                          {hasCurrent ? format(item.currentPrice) : '—'}
-                        </Td>
-                        <Td
-                          align="right"
-                          style={{
-                            fontVariantNumeric: 'tabular-nums',
-                            fontWeight: 600,
-                            color: gain >= 0 ? 'var(--green)' : 'var(--red)',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {gain >= 0 ? '+' : '-'}
-                          {format(Math.abs(gain))}
-                        </Td>
-                        <Td align="right">
-                          <span
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'flex-end',
-                              gap: 3,
-                              fontSize: 13,
-                              fontWeight: 500,
-                              fontVariantNumeric: 'tabular-nums',
-                              color: pct >= 0 ? 'var(--green)' : 'var(--red)',
-                            }}
-                          >
-                            <TrendIcon size={13} strokeWidth={2} />
-                            {pct >= 0 ? '+' : ''}
-                            {pct.toFixed(1)}%
-                          </span>
-                        </Td>
-                        <Td align="right">
-                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4 }}>
-                            <IconBtn icon={Pencil} label="Edit" onClick={() => openEdit(item)} />
-                            <IconBtn icon={Trash2} label="Delete" danger onClick={() => handleDelete(item)} />
-                          </div>
-                        </Td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* Allocation donut */}
-          {allocationData.length > 0 && (
-            <div
-              style={{
-                background: 'var(--bg-surface)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-lg)',
-                padding: 20,
-                boxShadow: 'var(--shadow-sm)',
-                marginTop: 24,
-              }}
-            >
-              <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 16 }}>
-                Portfolio Allocation
-              </div>
-              <DonutChart
-                data={allocationData}
-                height={isMobile ? 200 : 240}
-                centerValue={format(totalCurrentValue)}
-                centerLabel="Portfolio"
-                valueFormatter={(n) => format(n)}
-              />
-            </div>
-          )}
-        </>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {/* Add / Edit modal */}
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Edit Investment' : 'Add Investment'}>
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Edit Investment' : 'New Investment'}>
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {formError && (
             <p
@@ -491,35 +400,12 @@ export default function Investments() {
               {formError}
             </p>
           )}
-
-          {/* Type pill selector */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {TYPES.map((t) => {
-              const active = form.type === t;
-              return (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setForm({ ...form, type: t })}
-                  style={{
-                    borderRadius: 'var(--radius-full)',
-                    padding: '8px 16px',
-                    fontSize: 13,
-                    fontWeight: 500,
-                    fontFamily: 'Poppins',
-                    cursor: 'pointer',
-                    border: '1px solid ' + (active ? 'var(--accent)' : 'var(--border)'),
-                    background: active ? 'var(--accent)' : 'var(--bg-elevated)',
-                    color: active ? '#fff' : 'var(--text-secondary)',
-                    transition: 'all 150ms var(--ease)',
-                  }}
-                >
-                  {TYPE_META[t].label}
-                </button>
-              );
-            })}
-          </div>
-
+          <StyledSelect
+            label="Type"
+            value={form.type}
+            onChange={(e) => setForm({ ...form, type: e.target.value })}
+            options={TYPES.map((t) => ({ value: t, label: typeMeta(t).label }))}
+          />
           <Input
             label="Name"
             type="text"
@@ -539,7 +425,7 @@ export default function Investments() {
           />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Input
-              label="Quantity"
+              label="Units"
               type="number"
               step="any"
               min="0.0001"
@@ -581,16 +467,34 @@ export default function Investments() {
             value={form.notes}
             onChange={(e) => setForm({ ...form, notes: e.target.value })}
           />
-
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 }}>
-            <Button variant="secondary" onClick={() => setModalOpen(false)}>
+          <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+            <Button variant="ghost" fullWidth onClick={() => setModalOpen(false)}>
               Cancel
             </Button>
-            <Button variant="primary" type="submit" loading={submitting}>
+            <Button variant="primary" fullWidth type="submit" loading={submitting}>
               Save
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Delete confirmation */}
+      <Modal open={Boolean(deleteTarget)} onClose={() => setDeleteTarget(null)} title="" maxWidth={360}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 6 }}>
+          <AlertTriangle size={40} strokeWidth={1.75} color="var(--red)" />
+          <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginTop: 6 }}>
+            Delete this investment?
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>This action cannot be undone.</div>
+          <div style={{ display: 'flex', gap: 10, marginTop: 16, width: '100%' }}>
+            <Button variant="secondary" fullWidth onClick={() => setDeleteTarget(null)}>
+              Cancel
+            </Button>
+            <Button variant="danger" fullWidth loading={deleting} onClick={confirmDelete}>
+              Delete
+            </Button>
+          </div>
+        </div>
       </Modal>
     </div>
   );
@@ -599,10 +503,9 @@ export default function Investments() {
 /* ── Presentational helpers ────────────────────────────────────────────────*/
 
 function InvestmentCard({ item, format, onEdit, onDelete }) {
-  const meta = TYPE_META[item.type] ?? { label: item.type, badge: 'default' };
+  const meta = typeMeta(item.type);
   const gain = Number(item.gainLoss) || 0;
   const pct = Number(item.gainLossPercent) || 0;
-  const hasCurrent = item.currentPrice !== null && item.currentPrice !== undefined;
   const gainColor = gain >= 0 ? 'var(--green)' : 'var(--red)';
 
   return (
@@ -610,37 +513,42 @@ function InvestmentCard({ item, format, onEdit, onDelete }) {
       style={{
         background: 'var(--bg-surface)',
         border: '1px solid var(--border)',
+        borderLeft: `4px solid ${meta.color}`,
         borderRadius: 'var(--radius-lg)',
         padding: 16,
         boxShadow: 'var(--shadow-sm)',
       }}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-        <div style={{ minWidth: 0 }}>
-          <div
-            style={{
-              fontSize: 15,
-              fontWeight: 600,
-              color: 'var(--text-primary)',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {item.name}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+          <TypeIcon meta={meta} />
+          <div style={{ minWidth: 0 }}>
+            <div
+              style={{
+                fontSize: 14,
+                fontWeight: 500,
+                color: 'var(--text-primary)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {item.name}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              {item.symbol ? `${item.symbol} · ${meta.label}` : meta.label}
+            </div>
           </div>
-          {item.symbol && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{item.symbol}</div>}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-          <Badge variant={meta.badge}>{meta.label}</Badge>
-          <IconBtn icon={Pencil} label="Edit" onClick={onEdit} />
-          <IconBtn icon={Trash2} label="Delete" danger onClick={onDelete} />
+        <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+          <IconBtn icon={Pencil} label="Edit" small onClick={onEdit} />
+          <IconBtn icon={Trash2} label="Delete" small danger onClick={onDelete} />
         </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
-        <PriceBox label="Buy Price" value={format(item.buyPrice)} />
-        <PriceBox label="Current" value={hasCurrent ? format(item.currentPrice) : '—'} />
+        <MiniStat label="Invested" value={item.invested != null ? format(item.invested) : '—'} />
+        <MiniStat label="Current" value={item.currentValue != null ? format(item.currentValue) : '—'} />
       </div>
 
       <div
@@ -653,105 +561,81 @@ function InvestmentCard({ item, format, onEdit, onDelete }) {
           borderTop: '1px solid var(--border-subtle)',
         }}
       >
-        <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Qty: {item.quantity}</span>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-          <span style={{ fontSize: 15, fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: gainColor }}>
-            {gain >= 0 ? '+' : '-'}
-            {format(Math.abs(gain))}
-          </span>
-          <span style={{ fontSize: 12, fontWeight: 500, color: gainColor }}>
-            {pct >= 0 ? '+' : ''}
-            {pct.toFixed(1)}%
-          </span>
-        </div>
+        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Profit / Loss</span>
+        <span style={{ fontSize: 15, fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: gainColor }}>
+          {gain >= 0 ? '+' : '-'}
+          {format(Math.abs(gain))} ({pct >= 0 ? '+' : ''}
+          {pct.toFixed(1)}%)
+        </span>
       </div>
     </div>
   );
 }
 
-function PriceBox({ label, value }) {
+function MiniStat({ label, value }) {
   return (
     <div>
-      <div
+      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{label}</div>
+      <div style={{ fontSize: 13, fontWeight: 500, fontVariantNumeric: 'tabular-nums', color: 'var(--text-primary)', marginTop: 2 }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function TypeIcon({ meta }) {
+  const { Icon, color } = meta;
+  return (
+    <span
+      style={{
+        width: 32,
+        height: 32,
+        borderRadius: '50%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: `color-mix(in srgb, ${color} 12%, transparent)`,
+        color,
+        flexShrink: 0,
+      }}
+    >
+      <Icon size={16} strokeWidth={1.75} />
+    </span>
+  );
+}
+
+function StyledSelect({ label, value, onChange, options }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)' }}>{label}</label>
+      <select
+        value={value}
+        onChange={onChange}
         style={{
-          fontSize: 11,
-          fontWeight: 500,
-          textTransform: 'uppercase',
-          letterSpacing: '0.06em',
-          color: 'var(--text-muted)',
+          width: '100%',
+          background: 'var(--bg-elevated)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-md)',
+          padding: '11px 14px',
+          fontFamily: 'Poppins, system-ui, sans-serif',
+          fontSize: 14,
+          color: 'var(--text-primary)',
+          outline: 'none',
         }}
       >
-        {label}
-      </div>
-      <div style={{ fontSize: 16, fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: 'var(--text-primary)', marginTop: 2 }}>
-        {value}
-      </div>
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }
 
-function StatChip({ label, value, valueColor = 'var(--text-primary)', icon: Icon, iconColor = 'var(--text-muted)' }) {
-  return (
-    <div
-      style={{
-        background: 'var(--bg-surface)',
-        border: '1px solid var(--border)',
-        borderRadius: 'var(--radius-lg)',
-        padding: 16,
-        boxShadow: 'var(--shadow-sm)',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-        <span
-          style={{
-            fontSize: 11,
-            fontWeight: 500,
-            textTransform: 'uppercase',
-            letterSpacing: '0.06em',
-            color: 'var(--text-muted)',
-          }}
-        >
-          {label}
-        </span>
-        {Icon && <Icon size={16} strokeWidth={1.75} color={iconColor} />}
-      </div>
-      <div style={{ fontSize: 20, fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: valueColor, marginTop: 6 }}>
-        {value}
-      </div>
-    </div>
-  );
-}
-
-function FilterPill({ active, onClick, children }) {
+function IconBtn({ icon: Icon, onClick, danger, label, small }) {
   const [hover, setHover] = useState(false);
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      style={{
-        borderRadius: 'var(--radius-full)',
-        padding: '7px 16px',
-        fontSize: 13,
-        fontWeight: 500,
-        fontFamily: 'Poppins',
-        cursor: 'pointer',
-        whiteSpace: 'nowrap',
-        flexShrink: 0,
-        transition: 'all 150ms var(--ease)',
-        border: '1px solid ' + (active ? 'var(--accent)' : 'var(--border)'),
-        background: active ? 'var(--accent)' : hover ? 'var(--bg-hover)' : 'var(--bg-surface)',
-        color: active ? '#fff' : hover ? 'var(--text-primary)' : 'var(--text-secondary)',
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-
-function IconBtn({ icon: Icon, onClick, danger, label }) {
-  const [hover, setHover] = useState(false);
+  const size = small ? 28 : 32;
   const color = danger
     ? hover
       ? 'var(--red)'
@@ -767,8 +651,8 @@ function IconBtn({ icon: Icon, onClick, danger, label }) {
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
-        width: 30,
-        height: 30,
+        width: size,
+        height: size,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -793,7 +677,7 @@ function Th({ children, align = 'left' }) {
         fontSize: 11,
         fontWeight: 500,
         textTransform: 'uppercase',
-        letterSpacing: '0.06em',
+        letterSpacing: '0.05em',
         color: 'var(--text-muted)',
         padding: '12px 16px',
         textAlign: align,
@@ -823,17 +707,17 @@ function EmptyState({ onAdd }) {
         textAlign: 'center',
       }}
     >
-      <BarChart2 size={48} strokeWidth={1.5} color="var(--text-muted)" />
-      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-secondary)', marginTop: 12 }}>
+      <TrendingUp size={48} strokeWidth={1.5} color="var(--text-muted)" />
+      <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginTop: 12 }}>
         No investments tracked
       </div>
-      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
-        Add your stocks, crypto, mutual funds and FDs to track returns
+      <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 6 }}>
+        Track stocks, mutual funds, crypto, and more to watch your wealth grow.
       </div>
       <div style={{ marginTop: 16 }}>
         <Button variant="primary" onClick={onAdd}>
           <Plus size={16} strokeWidth={2} />
-          Add Investment
+          New investment
         </Button>
       </div>
     </div>
