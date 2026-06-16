@@ -17,9 +17,7 @@ import { useDisplayCurrency } from '../currency/CurrencyContext';
 import { extractError } from '../lib/format';
 import { sanitizeInput } from '../utils/sanitize';
 import InvestmentsSkeleton from '../components/skeletons/InvestmentsSkeleton';
-import AreaChartCard from '../components/charts/AreaChartCard';
 import DonutChart from '../components/charts/DonutChart';
-import useSnapshots from '../hooks/useSnapshots';
 import useWindowSize from '../hooks/useWindowSize';
 import Input from '../components/ui/Input';
 import Button from '../components/ui/Button';
@@ -99,9 +97,6 @@ export default function Investments() {
   useEffect(() => {
     load();
   }, []);
-
-  // After the page's own fetch effect so snapshots don't pre-empt it.
-  const { snapshots } = useSnapshots();
 
   function openCreate() {
     setEditing(null);
@@ -339,28 +334,6 @@ export default function Investments() {
                 centerLabel="Total"
                 valueFormatter={(n) => format(n)}
               />
-            </div>
-          )}
-
-          {/* Growth trend chart */}
-          {snapshots.length >= 2 && (
-            <div
-              style={{
-                background: 'var(--bg-surface)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-lg)',
-                padding: 20,
-                boxShadow: 'var(--shadow-sm)',
-                marginBottom: 24,
-              }}
-            >
-              <div style={{ marginBottom: 16 }}>
-                <div className="text-subhead" style={{ color: 'var(--text-primary)' }}>
-                  Portfolio Growth
-                </div>
-                <div className="text-caption">Net worth over last 30 days</div>
-              </div>
-              <AreaChartCard data={snapshots} dataKey="netWorth" xKey="label" height={isMobile ? 180 : 240} card={false} />
             </div>
           )}
         </>

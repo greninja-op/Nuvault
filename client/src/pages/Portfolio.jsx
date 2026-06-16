@@ -19,8 +19,6 @@ import { extractError } from '../lib/format';
 import { sanitizeInput } from '../utils/sanitize';
 import PortfolioSkeleton from '../components/skeletons/PortfolioSkeleton';
 import DonutChart from '../components/charts/DonutChart';
-import AreaChartCard from '../components/charts/AreaChartCard';
-import useSnapshots from '../hooks/useSnapshots';
 import useWindowSize from '../hooks/useWindowSize';
 import Input from '../components/ui/Input';
 import Button from '../components/ui/Button';
@@ -318,9 +316,6 @@ export default function Portfolio() {
     load();
   }, []);
 
-  // After the page's own fetch effect so snapshots don't pre-empt it.
-  const { snapshots } = useSnapshots();
-
   const config = useMemo(() => KINDS.find((k) => k.kind === activeKind) ?? KINDS[0], [activeKind]);
 
   const itemsByKind = useMemo(() => {
@@ -485,14 +480,6 @@ export default function Portfolio() {
             color={summary.totalReturns >= 0 ? 'var(--green)' : 'var(--red)'}
           />
         </div>
-      )}
-
-      {/* Portfolio trend */}
-      {snapshots.length >= 2 && (
-        <SectionCard style={{ marginBottom: 24 }}>
-          <CardHeader title="Portfolio Value" subtitle="Last 30 days" />
-          <AreaChartCard data={snapshots} dataKey="netWorth" xKey="label" height={isMobile ? 180 : 240} card={false} />
-        </SectionCard>
       )}
 
       {/* Allocation + quick stats */}
