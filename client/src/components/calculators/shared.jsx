@@ -79,7 +79,7 @@ export function CalculatorLayout({ controls, results, bottomChart }) {
         padding: 24,
       }}
     >
-      <div className="calc-grid">
+      <div className={bottomChart ? 'calc-grid calc-grid--has-bottom' : 'calc-grid'}>
         <div className="calc-controls">{controls}</div>
         <div className="calc-results" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {results}

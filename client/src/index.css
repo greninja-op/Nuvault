@@ -285,8 +285,11 @@ body {
 /* ── Calculator two-column layout (controls 55% / results 45%) ─────────────
  * On mobile the three slots flow in source order (controls → results →
  * bottom chart). On desktop the controls and the optional bottom chart stack
- * in the left column while the results occupy the right column, so the two
- * columns reach roughly equal height instead of leaving a left-side gap.
+ * in the left column while the results occupy the right column. Both columns
+ * stretch to the same total height (align-items: stretch) and the bottom-most
+ * card in each column grows (flex: 1) so the two columns' bottom edges sit
+ * flush. Chart canvases keep their own fixed height, so the extra space lands
+ * as padding below the chart rather than distorting it.
  */
 .calc-grid {
   display: grid;
@@ -296,7 +299,7 @@ body {
 @media (min-width: 768px) {
   .calc-grid {
     grid-template-columns: 55fr 45fr;
-    align-items: start;
+    align-items: stretch;
   }
   .calc-grid .calc-controls {
     grid-column: 1;
@@ -304,13 +307,33 @@ body {
   }
   .calc-grid .calc-results {
     grid-column: 2;
+    grid-row: 1;
+    height: 100%;
+  }
+  /* The last result card grows so its bottom is flush with the column. */
+  .calc-grid .calc-results > :last-child {
+    flex: 1 1 auto;
+  }
+
+  /* When a bottom chart exists, the left column splits into two rows: the
+   * controls keep their natural height and the chart card fills the rest. */
+  .calc-grid--has-bottom {
+    grid-template-rows: auto 1fr;
+  }
+  .calc-grid--has-bottom .calc-results {
     grid-row: 1 / span 2;
   }
-  .calc-grid .calc-bottom {
+  .calc-grid--has-bottom .calc-bottom {
     grid-column: 1;
     grid-row: 2;
+    display: flex;
+    flex-direction: column;
+  }
+  .calc-grid--has-bottom .calc-bottom > * {
+    flex: 1 1 auto;
   }
 }
+
 
 /* ── AI Advisor chat shell + typing indicator ──────────────────────────────
  * Preserves the page's responsive full-height behaviour (tighter on mobile to
