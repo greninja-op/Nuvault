@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, Calendar, CheckCircle2, PiggyBank, Plus, PlusCircle, Target, Trash2 } from 'lucide-react';
+import { AlertTriangle, Calendar, CheckCircle2, Pencil, PiggyBank, Plus, PlusCircle, Target, Trash2 } from 'lucide-react';
 import apiClient from '../api/client';
 import { useDisplayCurrency } from '../currency/CurrencyContext';
 import { extractError } from '../lib/format';
@@ -84,6 +84,12 @@ export default function Goals() {
   const [contribAmount, setContribAmount] = useState('');
   const [contribError, setContribError] = useState(null);
   const [contribSubmitting, setContribSubmitting] = useState(false);
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState(null);
+  const [editForm, setEditForm] = useState(EMPTY_FORM);
+  const [editError, setEditError] = useState(null);
+  const [editSubmitting, setEditSubmitting] = useState(false);
 
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
@@ -176,6 +182,56 @@ export default function Goals() {
     }
   }
 
+  function openEdit(goal) {
+    setEditTarget(goal);
+    setEditForm({
+      name: goal.name ?? '',
+      targetAmount: String(goal.targetAmount ?? ''),
+      targetDate: goal.targetDate ? String(goal.targetDate).slice(0, 10) : '',
+      category: goal.category ?? '',
+    });
+    setEditError(null);
+    setEditOpen(true);
+  }
+
+  async function handleEdit(event) {
+    event.preventDefault();
+    if (editSubmitting || !editTarget) return;
+    if (!editForm.name.trim()) {
+      setEditError('Name is required.');
+      return;
+    }
+    if (editForm.name.length > 100) {
+      setEditError('Name must be 1 to 100 characters.');
+      return;
+    }
+    const num = Number(editForm.targetAmount);
+    if (!Number.isFinite(num) || num < 0.01 || num > 999999999.99) {
+      setEditError('Target amount must be between 0.01 and 999,999,999.99.');
+      return;
+    }
+    if (!editForm.targetDate) {
+      setEditError('Target date is required.');
+      return;
+    }
+    setEditSubmitting(true);
+    setEditError(null);
+    try {
+      await apiClient.patch(`/goals/${editTarget._id}`, {
+        name: sanitizeInput(editForm.name.trim()),
+        targetAmount: num,
+        targetDate: editForm.targetDate,
+        category: sanitizeInput(editForm.category),
+      });
+      setEditOpen(false);
+      await load();
+    } catch (err) {
+      setEditError(extractError(err, 'Unable to update goal'));
+    } finally {
+      setEditSubmitting(false);
+    }
+  }
+
   async function confirmDelete() {
     if (!deleteTarget || deleting) return;
     setDeleting(true);
@@ -265,6 +321,7 @@ export default function Goals() {
                 goal={goal}
                 format={format}
                 onAddMoney={() => openContribute(goal)}
+                onEdit={() => openEdit(goal)}
                 onDelete={() => setDeleteTarget(goal)}
               />
             ))}
@@ -353,6 +410,55 @@ export default function Goals() {
         </form>
       </Modal>
 
+      {/* Edit goal modal */}
+      <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Edit Goal">
+        <form onSubmit={handleEdit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {editError && <FormError>{editError}</FormError>}
+          <Input
+            label="Goal Name"
+            type="text"
+            required
+            maxLength={100}
+            placeholder="e.g. Emergency Fund"
+            value={editForm.name}
+            onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+          />
+          <Input
+            label="Category"
+            type="text"
+            placeholder="e.g. Savings, Travel"
+            value={editForm.category}
+            onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
+          />
+          <Input
+            label="Target Amount"
+            prefix="₹"
+            type="number"
+            step="0.01"
+            min="0.01"
+            max="999999999.99"
+            required
+            value={editForm.targetAmount}
+            onChange={(e) => setEditForm({ ...editForm, targetAmount: e.target.value })}
+          />
+          <Input
+            label="Target Date"
+            type="date"
+            required
+            value={editForm.targetDate}
+            onChange={(e) => setEditForm({ ...editForm, targetDate: e.target.value })}
+          />
+          <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+            <Button variant="ghost" fullWidth onClick={() => setEditOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" fullWidth type="submit" loading={editSubmitting}>
+              Save
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
       {/* Add money modal */}
       <Modal open={contribOpen} onClose={() => setContribOpen(false)} title={`Add to ${contribTarget?.name ?? ''}`} maxWidth={360}>
         <form onSubmit={handleContribute} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -410,7 +516,7 @@ export default function Goals() {
 
 /* ── Presentational helpers ────────────────────────────────────────────────*/
 
-function GoalCard({ goal, format, onAddMoney, onDelete }) {
+function GoalCard({ goal, format, onAddMoney, onEdit, onDelete }) {
   const [hover, setHover] = useState(false);
   const progress = Math.min(Number(goal.progress) || 0, 1);
   const percent = Math.round(progress * 100);
@@ -468,7 +574,10 @@ function GoalCard({ goal, format, onAddMoney, onDelete }) {
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{goal.category}</div>
           )}
         </div>
-        <IconBtn icon={Trash2} label="Delete" danger onClick={onDelete} />
+        <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+          <IconBtn icon={Pencil} label="Edit" onClick={onEdit} />
+          <IconBtn icon={Trash2} label="Delete" danger onClick={onDelete} />
+        </div>
       </div>
 
       {/* Progress ring (88px) */}

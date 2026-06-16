@@ -34,10 +34,12 @@ const express = require('express');
 const {
   createGoalValidators,
   updateGoalValidators,
+  patchGoalValidators,
   createGoal,
   getGoals,
   getGoal,
   updateGoal,
+  patchGoal,
   deleteGoal,
 } = require('../controllers/goalController');
 
@@ -59,6 +61,7 @@ goalsRouter.post('/', createGoalValidators, createGoal);
 // (which validates a single `amount` field) — not the create chain.
 goalsRouter.get('/:id', getGoal);
 goalsRouter.put('/:id', updateGoalValidators, updateGoal);
+goalsRouter.patch('/:id', patchGoalValidators, patchGoal);
 goalsRouter.delete('/:id', deleteGoal);
 
 module.exports = goalsRouter;

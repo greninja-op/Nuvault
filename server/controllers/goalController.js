@@ -40,6 +40,7 @@ const {
   scopedFind,
   scopedFindById,
   scopedCreate,
+  scopedUpdate,
   scopedDelete,
 } = require('../utils/ownership');
 
@@ -175,6 +176,45 @@ const updateGoalValidators = [
     .withMessage('amount is required')
     .bail()
     .custom(buildPositiveAmountValidator('amount')),
+];
+
+/**
+ * Validation chain for `PATCH /api/goals/:id` — partial field edit.
+ *
+ * Distinct from the additive PUT contribution flow: PATCH edits the goal's
+ * descriptive fields (name, targetAmount, targetDate, category). Every field
+ * is optional — only those supplied are validated and applied — but
+ * `savedAmount` is deliberately NOT editable here (it stays additive-only via
+ * PUT). A field that is present but invalid is rejected with a 400 carrying a
+ * field-identifying message.
+ *
+ * @type {import('express').RequestHandler[]}
+ */
+const patchGoalValidators = [
+  body('name')
+    .optional()
+    .isString()
+    .withMessage('name is required')
+    .bail()
+    .customSanitizer((v) => v.trim())
+    .notEmpty()
+    .withMessage('name is required')
+    .bail()
+    .isLength({ max: NAME_MAX })
+    .withMessage(`name must be 1 to ${NAME_MAX} characters`),
+  body('targetAmount')
+    .optional()
+    .custom(buildPositiveAmountValidator('targetAmount')),
+  body('targetDate')
+    .optional({ values: 'falsy' })
+    .custom((value) => {
+      const d = value instanceof Date ? value : new Date(value);
+      if (Number.isNaN(d.getTime())) {
+        throw new Error('targetDate must be a valid date');
+      }
+      return true;
+    }),
+  body('category').optional().isString().withMessage('category is invalid'),
 ];
 
 /**
@@ -404,6 +444,59 @@ async function updateGoal(req, res, next) {
 }
 
 /**
+ * `PATCH /api/goals/:id` — partial field edit (name / targetAmount /
+ * targetDate / category).
+ *
+ * Unlike the additive PUT contribution flow, this replaces the supplied
+ * descriptive fields. `savedAmount` is intentionally not editable here, so
+ * the only way to change saved progress remains the additive PUT endpoint.
+ *
+ * Flow:
+ *   1. Validate any supplied fields (R15.x style — 400 with a
+ *      field-identifying message on the first invalid field).
+ *   2. Project only the whitelisted, present fields into an update payload.
+ *   3. Apply via the shared `scopedUpdate` helper (findOne by `(_id, user)`,
+ *      `Object.assign`, then `.save()` so schema validators run). A
+ *      malformed id / missing / foreign-owner record collapses to `null`
+ *      → 404 (R5.3). The persisted `user` is never reassigned (R5.6).
+ *   4. Respond 200 with the updated goal plus computed `progress`.
+ *
+ * @param {import('express').Request} req
+ * @param {import('express').Response} res
+ * @param {import('express').NextFunction} next
+ */
+async function patchGoal(req, res, next) {
+  try {
+    if (rejectIfValidationErrors(req, res)) return;
+
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const updates = {};
+    if (Object.prototype.hasOwnProperty.call(body, 'name')) {
+      updates.name = String(body.name).trim();
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'targetAmount')) {
+      const coerced = coerceNumber(body.targetAmount);
+      updates.targetAmount = coerced === null ? body.targetAmount : coerced;
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'targetDate')) {
+      updates.targetDate = body.targetDate ? new Date(body.targetDate) : null;
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'category')) {
+      updates.category = body.category;
+    }
+
+    const doc = await scopedUpdate(Goal, req, req.params.id, updates);
+    if (!doc) {
+      return res.status(404).json({ message: 'Goal not found' });
+    }
+
+    return res.status(200).json(toGoalResponse(doc));
+  } catch (err) {
+    return next(err);
+  }
+}
+
+/**
  * `DELETE /api/goals/:id` — remove a goal owned by the authenticated
  * user.
  *
@@ -438,11 +531,13 @@ module.exports = {
   getGoals,
   getGoal,
   updateGoal,
+  patchGoal,
   deleteGoal,
 
   // Validator chains
   createGoalValidators,
   updateGoalValidators,
+  patchGoalValidators,
 
   // Helpers exported for tests / re-use
   computeProgress,
