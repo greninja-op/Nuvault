@@ -197,3 +197,12 @@ body {
     transform: translate(-50%, -50%) scale(1);
   }
 }
+
+/* ── Dashboard mobile quick-actions: hide horizontal scrollbar ─────────────*/
+.dashboard-quick-actions {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.dashboard-quick-actions::-webkit-scrollbar {
+  display: none;
+}

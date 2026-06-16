@@ -32,14 +32,14 @@ export default function StatCard({
   const TrendIcon = isNegative ? TrendingDown : TrendingUp;
 
   return (
-    <Card variant="default">
+    <Card variant="default" style={{ boxShadow: 'var(--shadow-sm)' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <span className="text-label">{label}</span>
         {IconCmp && (
           <span
             style={{
-              width: 36,
-              height: 36,
+              width: 40,
+              height: 40,
               borderRadius: '50%',
               display: 'flex',
               alignItems: 'center',
@@ -49,15 +49,15 @@ export default function StatCard({
               flexShrink: 0,
             }}
           >
-            <IconCmp size={18} strokeWidth={1.75} />
+            <IconCmp size={20} strokeWidth={1.75} />
           </span>
         )}
       </div>
 
       <div
         style={{
-          marginTop: 12,
-          fontSize: 24,
+          margin: '12px 0 8px',
+          fontSize: 26,
           fontWeight: 700,
           fontVariantNumeric: 'tabular-nums',
           color: valueColor,
