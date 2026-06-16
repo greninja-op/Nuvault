@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowLeftRight,
@@ -9,7 +9,6 @@ import {
   Grid3X3,
   Landmark,
   LayoutDashboard,
-  LogOut,
   PieChart,
   Receipt,
   Settings as SettingsIcon,
@@ -19,7 +18,6 @@ import {
 } from 'lucide-react';
 import apiClient from '../api/client';
 import { useAuth } from '../auth/AuthContext';
-import { SUPPORTED_CURRENCIES, useDisplayCurrency } from '../currency/CurrencyContext';
 import useWindowSize from '../hooks/useWindowSize';
 import PageTransition from './PageTransition';
 
@@ -71,10 +69,8 @@ function initialsOf(name, email) {
 }
 
 export default function AppShell() {
-  const { user, logout } = useAuth();
-  const { displayCurrency, setDisplayCurrency } = useDisplayCurrency();
+  const { user } = useAuth();
   const { isMobile } = useWindowSize();
-  const navigate = useNavigate();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [profile, setProfile] = useState(null);
 
@@ -100,27 +96,9 @@ export default function AppShell() {
 
   const account = user || profile;
 
-  async function handleLogout() {
-    setDrawerOpen(false);
-    try {
-      await apiClient.post('/auth/logout');
-    } catch {
-      /* best-effort — proceed with local logout regardless */
-    }
-    logout();
-    navigate('/login', { replace: true });
-  }
-
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-base)', color: 'var(--text-primary)' }}>
-      {!isMobile && (
-        <DesktopSidebar
-          user={account}
-          displayCurrency={displayCurrency}
-          setDisplayCurrency={setDisplayCurrency}
-          onLogout={handleLogout}
-        />
-      )}
+      {!isMobile && <DesktopSidebar user={account} />}
 
       <main
         style={{
@@ -146,21 +124,14 @@ export default function AppShell() {
       )}
 
       <AnimatePresence>
-        {isMobile && drawerOpen && (
-          <MoreDrawer
-            onClose={() => setDrawerOpen(false)}
-            displayCurrency={displayCurrency}
-            setDisplayCurrency={setDisplayCurrency}
-            onLogout={handleLogout}
-          />
-        )}
+        {isMobile && drawerOpen && <MoreDrawer onClose={() => setDrawerOpen(false)} />}
       </AnimatePresence>
     </div>
   );
 }
 
 /* ── Desktop sidebar ───────────────────────────────────────────────────────*/
-function DesktopSidebar({ user, displayCurrency, setDisplayCurrency, onLogout }) {
+function DesktopSidebar({ user }) {
   return (
     <aside
       style={{
@@ -199,41 +170,7 @@ function DesktopSidebar({ user, displayCurrency, setDisplayCurrency, onLogout })
         <SidebarLink item={SETTINGS_ITEM} />
       </nav>
 
-      {/* Currency selector (kept from the previous shell) */}
-      <div style={{ padding: '12px 8px 8px' }}>
-        <label
-          className="text-label"
-          htmlFor="sidebar-currency"
-          style={{ display: 'block', marginBottom: 6 }}
-        >
-          Currency
-        </label>
-        <select
-          id="sidebar-currency"
-          aria-label="Display currency"
-          value={displayCurrency}
-          onChange={(e) => setDisplayCurrency(e.target.value)}
-          style={{
-            width: '100%',
-            background: 'var(--bg-elevated)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-md)',
-            color: 'var(--text-primary)',
-            padding: '8px 10px',
-            fontSize: 13,
-            fontFamily: 'Poppins',
-            outline: 'none',
-          }}
-        >
-          {SUPPORTED_CURRENCIES.map((code) => (
-            <option key={code} value={code}>
-              {code}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* Bottom user area */}
+      {/* Bottom user identity */}
       <div
         style={{
           marginTop: 8,
@@ -288,26 +225,6 @@ function DesktopSidebar({ user, displayCurrency, setDisplayCurrency, onLogout })
             {user?.email || ''}
           </div>
         </div>
-        <button
-          type="button"
-          onClick={onLogout}
-          aria-label="Log out"
-          style={{
-            width: 32,
-            height: 32,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: 'var(--radius-md)',
-            background: 'transparent',
-            border: 'none',
-            color: 'var(--text-muted)',
-            cursor: 'pointer',
-            flexShrink: 0,
-          }}
-        >
-          <LogOut size={16} strokeWidth={1.75} />
-        </button>
       </div>
     </aside>
   );
@@ -453,7 +370,7 @@ function BottomNavItem({ item }) {
 }
 
 /* ── Mobile "More" drawer ──────────────────────────────────────────────────*/
-function MoreDrawer({ onClose, displayCurrency, setDisplayCurrency, onLogout }) {
+function MoreDrawer({ onClose }) {
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 200 }}>
       <motion.div
@@ -517,54 +434,6 @@ function MoreDrawer({ onClose, displayCurrency, setDisplayCurrency, onLogout }) 
               </NavLink>
             );
           })}
-        </div>
-
-        {/* Currency + logout */}
-        <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
-          <select
-            aria-label="Display currency"
-            value={displayCurrency}
-            onChange={(e) => setDisplayCurrency(e.target.value)}
-            style={{
-              flex: 1,
-              background: 'var(--bg-elevated)',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-md)',
-              color: 'var(--text-primary)',
-              padding: '10px 12px',
-              fontSize: 14,
-              fontFamily: 'Poppins',
-              outline: 'none',
-            }}
-          >
-            {SUPPORTED_CURRENCIES.map((code) => (
-              <option key={code} value={code}>
-                {code}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={onLogout}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '10px 16px',
-              borderRadius: 'var(--radius-md)',
-              background: 'var(--red-muted)',
-              color: 'var(--red)',
-              border: 'none',
-              fontSize: 14,
-              fontWeight: 500,
-              fontFamily: 'Poppins',
-              cursor: 'pointer',
-              minHeight: 44,
-            }}
-          >
-            <LogOut size={16} strokeWidth={1.75} />
-            Log out
-          </button>
         </div>
       </motion.div>
     </div>

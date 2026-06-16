@@ -1,22 +1,34 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { LogOut, Mail, Moon, User as UserIcon } from 'lucide-react';
 import apiClient from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import {
   SUPPORTED_CURRENCIES,
   useDisplayCurrency,
 } from '../currency/CurrencyContext';
+import useTheme from '../hooks/useTheme';
 import { extractError } from '../lib/format';
+import Toggle from '../components/ui/Toggle';
+import Button from '../components/ui/Button';
 
 /**
- * Settings view. Lets the user pick a display currency (persisted in
- * local storage and applied thereafter — Requirement 19.4) and shows
- * the current profile pulled from `GET /auth/me`.
+ * Settings view. Houses the three preferences that used to live in the
+ * sidebar/drawer:
+ *   - Appearance: light/dark theme toggle (wired to the existing `useTheme`
+ *     hook — the same controller App mounts, persisted in localStorage).
+ *   - Regional: display-currency selector (wired to `useDisplayCurrency`).
+ *   - Account: profile from `GET /auth/me` + logout (same best-effort
+ *     `POST /auth/logout` → local logout → redirect flow the shell used).
  */
 export default function Settings() {
   const { displayCurrency, setDisplayCurrency } = useDisplayCurrency();
-  const { user } = useAuth();
+  const { theme, toggleTheme } = useTheme();
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [profile, setProfile] = useState(user ?? null);
   const [error, setError] = useState(null);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -34,68 +46,170 @@ export default function Settings() {
     };
   }, []);
 
+  async function handleLogout() {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      await apiClient.post('/auth/logout');
+    } catch {
+      /* best-effort — proceed with local logout regardless */
+    }
+    logout();
+    navigate('/login', { replace: true });
+  }
+
   return (
-    <section className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold text-slate-900">Settings</h1>
-        <p className="text-sm text-slate-600">Preferences and profile.</p>
-      </header>
+    <div style={{ maxWidth: 720, margin: '0 auto' }}>
+      {/* Header */}
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.3px' }}>
+          Settings
+        </h1>
+      </div>
 
       {error && (
-        <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p
+          role="alert"
+          style={{
+            background: 'var(--red-muted)',
+            color: 'var(--red)',
+            borderRadius: 'var(--radius-md)',
+            padding: '8px 12px',
+            fontSize: 13,
+            marginBottom: 20,
+          }}
+        >
           {error}
         </p>
       )}
 
-      <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-sm font-semibold text-slate-900">Profile</h2>
-        {profile ? (
-          <dl className="mt-3 grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
-            <div>
-              <dt className="text-xs uppercase tracking-wide text-slate-500">Name</dt>
-              <dd className="mt-1 text-slate-800">{profile.name}</dd>
+      {/* Appearance */}
+      <SectionCard title="Appearance">
+        <SettingRow
+          label="Theme"
+          hint="Switch between light and dark."
+          control={
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Moon size={16} strokeWidth={1.75} color="var(--text-muted)" />
+              <Toggle checked={theme === 'dark'} onChange={toggleTheme} label="Dark mode" />
             </div>
-            <div>
-              <dt className="text-xs uppercase tracking-wide text-slate-500">Email</dt>
-              <dd className="mt-1 text-slate-800">{profile.email}</dd>
-            </div>
-            {profile.currency && (
-              <div>
-                <dt className="text-xs uppercase tracking-wide text-slate-500">
-                  Account currency
-                </dt>
-                <dd className="mt-1 text-slate-800">{profile.currency}</dd>
-              </div>
-            )}
-          </dl>
-        ) : (
-          <p className="mt-3 text-sm text-slate-500">Loading…</p>
-        )}
-      </div>
+          }
+        />
+      </SectionCard>
 
-      <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-sm font-semibold text-slate-900">Display currency</h2>
-        <p className="mt-1 text-xs text-slate-500">
-          Used to convert and display totals. Stored on this device.
-        </p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {SUPPORTED_CURRENCIES.map((code) => (
-            <button
-              key={code}
-              type="button"
-              onClick={() => setDisplayCurrency(code)}
-              className={[
-                'rounded-md border px-3 py-1.5 text-sm',
-                code === displayCurrency
-                  ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                  : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100',
-              ].join(' ')}
+      {/* Regional */}
+      <SectionCard title="Regional">
+        <SettingRow
+          label="Currency"
+          hint="Used to convert and display totals. Stored on this device."
+          control={
+            <select
+              aria-label="Display currency"
+              value={displayCurrency}
+              onChange={(e) => setDisplayCurrency(e.target.value)}
+              style={{
+                background: 'var(--bg-elevated)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-md)',
+                padding: '11px 14px',
+                fontFamily: 'Poppins, system-ui, sans-serif',
+                fontSize: 14,
+                color: 'var(--text-primary)',
+                outline: 'none',
+                minWidth: 120,
+              }}
             >
-              {code}
-            </button>
-          ))}
+              {SUPPORTED_CURRENCIES.map((code) => (
+                <option key={code} value={code}>
+                  {code}
+                </option>
+              ))}
+            </select>
+          }
+        />
+      </SectionCard>
+
+      {/* Account */}
+      <SectionCard title="Account">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: '50%',
+                background: 'var(--accent-muted)',
+                color: 'var(--accent)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 16,
+                fontWeight: 600,
+                flexShrink: 0,
+              }}
+            >
+              {(profile?.name || profile?.email || '?').trim().charAt(0).toUpperCase()}
+            </span>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 15, fontWeight: 600, color: 'var(--text-primary)' }}>
+                <UserIcon size={14} strokeWidth={1.75} color="var(--text-muted)" />
+                {profile?.name || 'Account'}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text-secondary)', marginTop: 2 }}>
+                <Mail size={14} strokeWidth={1.75} color="var(--text-muted)" />
+                {profile?.email || ''}
+              </div>
+            </div>
+          </div>
+
+          <Button variant="danger" fullWidth loading={loggingOut} onClick={handleLogout}>
+            <LogOut size={16} strokeWidth={2} />
+            Log out
+          </Button>
         </div>
+      </SectionCard>
+    </div>
+  );
+}
+
+/* ── Presentational helpers ────────────────────────────────────────────────*/
+
+function SectionCard({ title, children }) {
+  return (
+    <div
+      style={{
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius-lg)',
+        boxShadow: 'var(--shadow-sm)',
+        padding: 20,
+        marginBottom: 20,
+      }}
+    >
+      <h2 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 16 }}>
+        {title}
+      </h2>
+      {children}
+    </div>
+  );
+}
+
+function SettingRow({ label, hint, control }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 16,
+        flexWrap: 'wrap',
+      }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>{label}</div>
+        {hint && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{hint}</div>}
       </div>
-    </section>
+      <div style={{ flexShrink: 0 }}>{control}</div>
+    </div>
   );
 }
