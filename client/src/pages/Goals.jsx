@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Calendar, CheckCircle2, Plus, Target, Trash2 } from 'lucide-react';
+import { AlertTriangle, Calendar, CheckCircle2, PiggyBank, Plus, PlusCircle, Target, Trash2 } from 'lucide-react';
 import apiClient from '../api/client';
 import { useDisplayCurrency } from '../currency/CurrencyContext';
 import { extractError } from '../lib/format';
@@ -10,11 +10,54 @@ import Input from '../components/ui/Input';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
 import Modal from '../components/ui/Modal';
+import StatCard from '../components/ui/StatCard';
 
 const EMPTY_FORM = { name: '', targetAmount: '', targetDate: '', category: '' };
 
-const RING_RADIUS = 50;
-const RING_CIRC = 2 * Math.PI * RING_RADIUS; // ≈ 314.16
+const RING_RADIUS = 39;
+const RING_CIRC = 2 * Math.PI * RING_RADIUS; // ≈ 245.04
+
+/** Whole days from today until a date (negative = past). */
+function daysUntil(date) {
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const t = new Date(d);
+  t.setHours(0, 0, 0, 0);
+  return Math.round((t - today) / 86400000);
+}
+
+function monthYear(date) {
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+}
+
+/**
+ * Ring color from pace (when a deadline + createdAt exist) else percentage.
+ * Pace: compare elapsed-time fraction to saved fraction.
+ */
+function ringColorFor(goal, percent, complete) {
+  if (complete) return 'var(--green)';
+  const saved = Number(goal.savedAmount) || 0;
+  const target = Number(goal.targetAmount) || 0;
+  const actual = target > 0 ? saved / target : 0;
+
+  if (goal.targetDate && goal.createdAt) {
+    const start = new Date(goal.createdAt).getTime();
+    const end = new Date(goal.targetDate).getTime();
+    if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
+      const expected = Math.min(Math.max((Date.now() - start) / (end - start), 0), 1);
+      if (actual >= expected) return 'var(--green)'; // on pace or ahead
+      if (actual >= expected * 0.8) return 'var(--amber)'; // somewhat behind
+      return 'var(--red)'; // significantly behind
+    }
+  }
+  // No usable deadline → percentage thresholds.
+  if (percent >= 50) return 'var(--green)';
+  return 'var(--accent)';
+}
 
 /**
  * Goals list with create / contribute / delete. The backend PUT endpoint
@@ -22,10 +65,7 @@ const RING_CIRC = 2 * Math.PI * RING_RADIUS; // ≈ 314.16
  * so there is no full "edit goal" flow — see goalController.js.
  *
  * Backend endpoints (unchanged):
- *   GET    /goals
- *   POST   /goals
- *   PUT    /goals/:id  body: { amount }
- *   DELETE /goals/:id
+ *   GET /goals · POST /goals · PUT /goals/:id { amount } · DELETE /goals/:id
  */
 export default function Goals() {
   const { format } = useDisplayCurrency();
@@ -44,6 +84,9 @@ export default function Goals() {
   const [contribAmount, setContribAmount] = useState('');
   const [contribError, setContribError] = useState(null);
   const [contribSubmitting, setContribSubmitting] = useState(false);
+
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -133,13 +176,17 @@ export default function Goals() {
     }
   }
 
-  async function handleDelete(goal) {
-    if (typeof window !== 'undefined' && !window.confirm(`Delete goal ${goal.name}?`)) return;
+  async function confirmDelete() {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
     try {
-      await apiClient.delete(`/goals/${goal._id}`);
+      await apiClient.delete(`/goals/${deleteTarget._id}`);
+      setDeleteTarget(null);
       await load();
     } catch (err) {
       setError(extractError(err, 'Unable to delete goal'));
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -160,19 +207,20 @@ export default function Goals() {
           alignItems: 'center',
           gap: 12,
           marginBottom: 24,
+          flexWrap: 'wrap',
         }}
       >
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.3px' }}>
             Goals
           </h1>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
-            Your financial milestones
+          <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 4 }}>
+            What you&apos;re working toward, and how close you are.
           </p>
         </div>
         <Button variant="primary" onClick={openCreate}>
           <Plus size={16} strokeWidth={2} />
-          Add Goal
+          New goal
         </Button>
       </div>
 
@@ -200,31 +248,24 @@ export default function Goals() {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr)',
-              gap: 12,
+              gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
+              gap: 16,
               marginBottom: 24,
             }}
           >
-            <SummaryChip label="Total Goals" value={String(items.length)} color="var(--accent)" />
-            <SummaryChip label="Total Saved" value={format(totalSaved)} color="var(--green)" />
-            <SummaryChip label="Total Target" value={format(totalTarget)} color="var(--text-primary)" />
+            <StatCard label="Total Target" value={format(totalTarget)} icon={Target} iconColor="var(--accent)" />
+            <StatCard label="Total Saved" value={format(totalSaved)} icon={PiggyBank} iconColor="var(--green)" valueColor="var(--green)" />
           </div>
 
           {/* Goals grid */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: `repeat(${columns}, 1fr)`,
-              gap: 16,
-            }}
-          >
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${columns}, 1fr)`, gap: 16 }}>
             {items.map((goal) => (
               <GoalCard
                 key={goal._id}
                 goal={goal}
                 format={format}
                 onAddMoney={() => openContribute(goal)}
-                onDelete={() => handleDelete(goal)}
+                onDelete={() => setDeleteTarget(goal)}
               />
             ))}
           </div>
@@ -243,14 +284,7 @@ export default function Goals() {
             <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 16 }}>
               Overall Progress
             </div>
-            <div
-              style={{
-                height: 12,
-                borderRadius: 'var(--radius-full)',
-                background: 'var(--bg-elevated)',
-                overflow: 'hidden',
-              }}
-            >
+            <div style={{ height: 12, borderRadius: 'var(--radius-full)', background: 'var(--bg-elevated)', overflow: 'hidden' }}>
               <div
                 style={{
                   height: '100%',
@@ -262,9 +296,7 @@ export default function Goals() {
               />
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
-              <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--green)' }}>
-                {format(totalSaved)} saved
-              </span>
+              <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--green)' }}>{format(totalSaved)} saved</span>
               <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-muted)' }}>
                 {format(Math.max(totalTarget - totalSaved, 0))} to go
               </span>
@@ -310,11 +342,11 @@ export default function Goals() {
             value={form.targetDate}
             onChange={(e) => setForm({ ...form, targetDate: e.target.value })}
           />
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 }}>
-            <Button variant="secondary" onClick={() => setCreateOpen(false)}>
+          <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+            <Button variant="ghost" fullWidth onClick={() => setCreateOpen(false)}>
               Cancel
             </Button>
-            <Button variant="primary" type="submit" loading={submitting}>
+            <Button variant="primary" fullWidth type="submit" loading={submitting}>
               Save
             </Button>
           </div>
@@ -322,11 +354,7 @@ export default function Goals() {
       </Modal>
 
       {/* Add money modal */}
-      <Modal
-        open={contribOpen}
-        onClose={() => setContribOpen(false)}
-        title={`Add Money to ${contribTarget?.name ?? ''}`}
-      >
+      <Modal open={contribOpen} onClose={() => setContribOpen(false)} title={`Add to ${contribTarget?.name ?? ''}`} maxWidth={360}>
         <form onSubmit={handleContribute} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {contribTarget && (
             <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
@@ -343,18 +371,38 @@ export default function Goals() {
             min="0.01"
             max="999999999.99"
             required
+            autoFocus
             value={contribAmount}
             onChange={(e) => setContribAmount(e.target.value)}
           />
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 }}>
-            <Button variant="secondary" onClick={() => setContribOpen(false)}>
+          <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+            <Button variant="ghost" fullWidth onClick={() => setContribOpen(false)}>
               Cancel
             </Button>
-            <Button variant="primary" type="submit" loading={contribSubmitting}>
-              Add Money
+            <Button variant="primary" fullWidth type="submit" loading={contribSubmitting}>
+              {Number(contribAmount) > 0 ? `Add ${format(Number(contribAmount))}` : 'Add Money'}
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Delete confirmation */}
+      <Modal open={Boolean(deleteTarget)} onClose={() => setDeleteTarget(null)} title="" maxWidth={360}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 6 }}>
+          <AlertTriangle size={40} strokeWidth={1.75} color="var(--red)" />
+          <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginTop: 6 }}>
+            Delete this goal?
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>This action cannot be undone.</div>
+          <div style={{ display: 'flex', gap: 10, marginTop: 16, width: '100%' }}>
+            <Button variant="secondary" fullWidth onClick={() => setDeleteTarget(null)}>
+              Cancel
+            </Button>
+            <Button variant="danger" fullWidth loading={deleting} onClick={confirmDelete}>
+              Delete
+            </Button>
+          </div>
+        </div>
       </Modal>
     </div>
   );
@@ -367,23 +415,23 @@ function GoalCard({ goal, format, onAddMoney, onDelete }) {
   const progress = Math.min(Number(goal.progress) || 0, 1);
   const percent = Math.round(progress * 100);
   const complete = percent >= 100;
-
-  const ringColor =
-    percent >= 80 ? 'var(--green)' : percent >= 50 ? 'var(--amber)' : 'var(--accent)';
+  const ringColor = ringColorFor(goal, percent, complete);
   const offset = RING_CIRC * (1 - Math.min(percent, 100) / 100);
 
-  let overdue = false;
-  if (goal.targetDate && !complete) {
-    const due = new Date(goal.targetDate);
-    if (!Number.isNaN(due.getTime())) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      overdue = due < today;
+  // Deadline text.
+  let dateNode = null;
+  if (goal.targetDate) {
+    const d = daysUntil(goal.targetDate);
+    if (complete) {
+      dateNode = { text: `Target: ${monthYear(goal.targetDate)}`, color: 'var(--text-muted)' };
+    } else if (d != null && d < 0) {
+      dateNode = { text: `${Math.abs(d)} day${Math.abs(d) === 1 ? '' : 's'} overdue`, color: 'var(--red)' };
+    } else if (d != null && d <= 60) {
+      dateNode = { text: `${d} day${d === 1 ? '' : 's'} left`, color: 'var(--text-muted)' };
+    } else {
+      dateNode = { text: `Due ${monthYear(goal.targetDate)}`, color: 'var(--text-muted)' };
     }
   }
-  const dateText = goal.targetDate
-    ? new Date(goal.targetDate).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
-    : null;
 
   return (
     <div
@@ -398,15 +446,15 @@ function GoalCard({ goal, format, onAddMoney, onDelete }) {
         transition: 'box-shadow 200ms var(--ease)',
         display: 'flex',
         flexDirection: 'column',
-        gap: 16,
+        gap: 14,
       }}
     >
       {/* Top row */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
         <div style={{ minWidth: 0 }}>
           <div
             style={{
-              fontSize: 16,
+              fontSize: 15,
               fontWeight: 600,
               color: 'var(--text-primary)',
               overflow: 'hidden',
@@ -423,80 +471,49 @@ function GoalCard({ goal, format, onAddMoney, onDelete }) {
         <IconBtn icon={Trash2} label="Delete" danger onClick={onDelete} />
       </div>
 
-      {/* Progress ring */}
-      <div style={{ position: 'relative', width: 120, height: 120, margin: '8px auto' }}>
-        <svg width="120" height="120" viewBox="0 0 120 120">
-          <circle cx="60" cy="60" r={RING_RADIUS} fill="none" stroke="var(--bg-elevated)" strokeWidth="10" />
+      {/* Progress ring (88px) */}
+      <div style={{ position: 'relative', width: 88, height: 88, margin: '4px auto' }}>
+        <svg width="88" height="88" viewBox="0 0 88 88">
+          <circle cx="44" cy="44" r={RING_RADIUS} fill="none" stroke="var(--bg-elevated)" strokeWidth="8" />
           <circle
-            cx="60"
-            cy="60"
+            cx="44"
+            cy="44"
             r={RING_RADIUS}
             fill="none"
             stroke={ringColor}
-            strokeWidth="10"
+            strokeWidth="8"
             strokeLinecap="round"
             strokeDasharray={RING_CIRC}
             strokeDashoffset={offset}
-            style={{
-              transform: 'rotate(-90deg)',
-              transformOrigin: 'center',
-              transition: 'stroke-dashoffset 800ms var(--ease)',
-            }}
+            style={{ transform: 'rotate(-90deg)', transformOrigin: 'center', transition: 'stroke-dashoffset 800ms var(--ease)' }}
           />
         </svg>
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           {complete ? (
-            <>
-              <CheckCircle2 size={32} strokeWidth={2} color="var(--green)" />
-              <div style={{ fontSize: 11, color: 'var(--green)', marginTop: 2 }}>Complete!</div>
-            </>
+            <CheckCircle2 size={34} strokeWidth={2} color="var(--green)" />
           ) : (
-            <>
-              <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-primary)' }}>{percent}%</div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>complete</div>
-            </>
+            <span style={{ fontSize: 20, fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: ringColor }}>
+              {percent}%
+            </span>
           )}
         </div>
       </div>
 
-      {/* Caption (also satisfies progress read-out) */}
-      <div style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'center', marginTop: -8 }}>
-        {percent}% saved
+      {/* Caption (one element — satisfies the progress read-out) */}
+      <div style={{ fontSize: 11, color: complete ? 'var(--green)' : 'var(--text-muted)', textAlign: 'center', marginTop: -6 }}>
+        {complete ? 'Complete!' : `${percent}% saved`}
       </div>
 
-      {/* Amount row */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-        <div>
-          <div style={{ fontSize: 18, fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: 'var(--green)' }}>
-            {format(goal.savedAmount)}
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>saved</div>
-        </div>
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: 15, fontWeight: 500, fontVariantNumeric: 'tabular-nums', color: 'var(--text-muted)' }}>
-            {format(goal.targetAmount)}
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>target</div>
-        </div>
+      {/* Amount line */}
+      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>
+        {format(goal.savedAmount)} of {format(goal.targetAmount)}
       </div>
 
-      {/* Target date row */}
-      {dateText && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Calendar size={14} strokeWidth={1.75} color={overdue ? 'var(--red)' : 'var(--text-muted)'} />
-          <span style={{ fontSize: 12, color: overdue ? 'var(--red)' : 'var(--text-muted)' }}>
-            Target: {dateText}
-          </span>
-          {overdue && <Badge variant="danger">Overdue</Badge>}
+      {/* Deadline line */}
+      {dateNode && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+          <Calendar size={13} strokeWidth={1.75} color={dateNode.color} />
+          <span style={{ fontSize: 12, color: dateNode.color }}>{dateNode.text}</span>
         </div>
       )}
 
@@ -507,40 +524,11 @@ function GoalCard({ goal, format, onAddMoney, onDelete }) {
             Goal Achieved! 🎉
           </Button>
         ) : (
-          <Button variant="primary" fullWidth onClick={onAddMoney}>
-            <Plus size={14} strokeWidth={2} />
+          <Button variant="secondary" size="sm" fullWidth onClick={onAddMoney}>
+            <PlusCircle size={15} strokeWidth={2} />
             Add Money
           </Button>
         )}
-      </div>
-    </div>
-  );
-}
-
-function SummaryChip({ label, value, color }) {
-  return (
-    <div
-      style={{
-        background: 'var(--bg-surface)',
-        border: '1px solid var(--border)',
-        borderRadius: 'var(--radius-lg)',
-        padding: 16,
-        boxShadow: 'var(--shadow-sm)',
-      }}
-    >
-      <div
-        style={{
-          fontSize: 11,
-          fontWeight: 500,
-          textTransform: 'uppercase',
-          letterSpacing: '0.06em',
-          color: 'var(--text-muted)',
-        }}
-      >
-        {label}
-      </div>
-      <div style={{ fontSize: 22, fontWeight: 700, fontVariantNumeric: 'tabular-nums', color, marginTop: 4 }}>
-        {value}
       </div>
     </div>
   );
@@ -563,8 +551,8 @@ function IconBtn({ icon: Icon, onClick, danger, label }) {
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
-        width: 32,
-        height: 32,
+        width: 28,
+        height: 28,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -577,7 +565,7 @@ function IconBtn({ icon: Icon, onClick, danger, label }) {
         transition: 'all 150ms var(--ease)',
       }}
     >
-      <Icon size={16} strokeWidth={1.75} />
+      <Icon size={15} strokeWidth={1.75} />
     </button>
   );
 }
@@ -615,16 +603,16 @@ function EmptyState({ onAdd }) {
       }}
     >
       <Target size={48} strokeWidth={1.5} color="var(--text-muted)" />
-      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-secondary)', marginTop: 12 }}>
+      <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginTop: 12 }}>
         No goals yet
       </div>
-      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
-        Set financial goals and track your progress visually
+      <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 6 }}>
+        Set a savings goal and watch your progress build.
       </div>
       <div style={{ marginTop: 16 }}>
         <Button variant="primary" onClick={onAdd}>
           <Plus size={16} strokeWidth={2} />
-          Add Your First Goal
+          New goal
         </Button>
       </div>
     </div>
