@@ -206,3 +206,18 @@ body {
 .dashboard-quick-actions::-webkit-scrollbar {
   display: none;
 }
+
+/* ── Generic hidden-scrollbar utility + transaction row hover ──────────────*/
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.tx-row {
+  transition: background 150ms var(--ease);
+}
+.tx-row:hover {
+  background: var(--bg-hover);
+}

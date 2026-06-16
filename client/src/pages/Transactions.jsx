@@ -1,12 +1,30 @@
 import { useEffect, useState } from 'react';
+import {
+  ArrowLeftRight,
+  Banknote,
+  Car,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Circle,
+  Heart,
+  Music,
+  MoreVertical,
+  Pencil,
+  Plus,
+  Search,
+  ShoppingBag,
+  Trash2,
+  UtensilsCrossed,
+} from 'lucide-react';
 import apiClient from '../api/client';
-import Field, { inputClass } from '../components/Field';
-import Modal from '../components/Modal';
 import { useDisplayCurrency } from '../currency/CurrencyContext';
-import { extractError, formatCurrency, formatDate } from '../lib/format';
+import { extractError } from '../lib/format';
 import { sanitizeInput } from '../utils/sanitize';
 import TransactionsSkeleton from '../components/skeletons/TransactionsSkeleton';
-import EmptyState from '../components/EmptyState';
+import Input from '../components/ui/Input';
+import Button from '../components/ui/Button';
+import Modal from '../components/ui/Modal';
 
 const TYPES = ['income', 'expense'];
 
@@ -23,9 +41,43 @@ const MONTHS = [
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ];
 
+const TYPE_FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'income', label: 'Income' },
+  { id: 'expense', label: 'Expense' },
+];
+const CATEGORY_FILTERS = ['Food', 'Transport', 'Shopping', 'Health', 'Entertainment', 'Other'];
+
+const PAGE_SIZE = 20;
+
+/** Map a transaction category/type to an icon + accent color. */
+function categoryVisual(category, type) {
+  const c = String(category || '').toLowerCase();
+  if (type === 'income' || c.includes('salary') || c.includes('income'))
+    return { Icon: Banknote, color: '#16a34a' };
+  if (c.includes('food') || c.includes('grocery') || c.includes('groceries') || c.includes('restaurant'))
+    return { Icon: UtensilsCrossed, color: '#f59e0b' };
+  if (c.includes('transport') || c.includes('fuel') || c.includes('travel') || c.includes('car'))
+    return { Icon: Car, color: '#06b6d4' };
+  if (c.includes('shop') || c.includes('cloth'))
+    return { Icon: ShoppingBag, color: '#a78bfa' };
+  if (c.includes('health') || c.includes('medical'))
+    return { Icon: Heart, color: '#ef4444' };
+  if (c.includes('entertain') || c.includes('music') || c.includes('movie'))
+    return { Icon: Music, color: '#f59e0b' };
+  return { Icon: Circle, color: '#a1a1aa' };
+}
+
+/** Short "12 Jun" date. */
+function shortDate(value) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+}
+
 /**
- * Transactions list with optional month/year filter and a category-grouped
- * income/expense summary card. Backend endpoints:
+ * Transactions list with month/year navigation and a category-grouped
+ * income/expense summary. Backend endpoints (unchanged):
  *   GET    /transactions?month=&year=
  *   GET    /transactions/summary?month=&year=
  *   POST   /transactions
@@ -33,11 +85,12 @@ const MONTHS = [
  *   DELETE /transactions/:id
  */
 export default function Transactions() {
-  const { displayCurrency, format } = useDisplayCurrency();
+  const { format } = useDisplayCurrency();
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
-  const [filterEnabled, setFilterEnabled] = useState(true);
+  // Always filter by the selected month (driven by the chevron navigator).
+  const [filterEnabled] = useState(true);
 
   const [items, setItems] = useState([]);
   const [summary, setSummary] = useState({ income: [], expense: [] });
@@ -49,6 +102,12 @@ export default function Transactions() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [formError, setFormError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Presentation-only filtering state (no effect on data fetching).
+  const [search, setSearch] = useState('');
+  const [activeFilter, setActiveFilter] = useState('all');
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [menuId, setMenuId] = useState(null);
 
   async function load() {
     setLoading(true);
@@ -152,318 +211,647 @@ export default function Transactions() {
 
   const totalIncome = summary.income.reduce((s, x) => s + Number(x.total || 0), 0);
   const totalExpense = summary.expense.reduce((s, x) => s + Number(x.total || 0), 0);
+  const balance = totalIncome - totalExpense;
+
+  function prevMonth() {
+    setVisibleCount(PAGE_SIZE);
+    if (month === 1) {
+      setMonth(12);
+      setYear((y) => y - 1);
+    } else {
+      setMonth((m) => m - 1);
+    }
+  }
+  function nextMonth() {
+    setVisibleCount(PAGE_SIZE);
+    if (month === 12) {
+      setMonth(1);
+      setYear((y) => y + 1);
+    } else {
+      setMonth((m) => m + 1);
+    }
+  }
+
+  // Client-side filtering of the already-fetched month's transactions.
+  const filtered = items.filter((tx) => {
+    if (activeFilter === 'income' && tx.type !== 'income') return false;
+    if (activeFilter === 'expense' && tx.type !== 'expense') return false;
+    if (
+      CATEGORY_FILTERS.includes(activeFilter) &&
+      String(tx.category || '').toLowerCase() !== activeFilter.toLowerCase()
+    ) {
+      return false;
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      const hay = `${tx.description || ''} ${tx.category || ''}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+  const shown = filtered.slice(0, visibleCount);
 
   if (loading) return <TransactionsSkeleton />;
 
   return (
-    <section className="space-y-4">
-      <header className="flex flex-wrap items-center justify-between gap-3">
+    <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+      {/* Header */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 12,
+          marginBottom: 24,
+        }}
+      >
         <div>
-          <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Transactions</h1>
-          <p className="text-sm text-slate-600">Track income and expenses.</p>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.3px' }}>
+            Transactions
+          </h1>
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
+            Track every rupee in and out
+          </p>
         </div>
-        <button
-          type="button"
-          onClick={openCreate}
-          className="flex min-h-[44px] w-full items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 sm:w-auto"
-        >
-          New transaction
-        </button>
-      </header>
+        <Button variant="primary" onClick={openCreate}>
+          <Plus size={16} strokeWidth={2} />
+          Add Transaction
+        </Button>
+      </div>
 
-      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-white p-3">
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={filterEnabled}
-            onChange={(e) => setFilterEnabled(e.target.checked)}
-          />
-          <span>Filter by month</span>
-        </label>
-        <select
-          aria-label="Month"
-          value={month}
-          disabled={!filterEnabled}
-          onChange={(e) => setMonth(Number(e.target.value))}
-          className={inputClass + ' max-w-[8rem]'}
-        >
-          {MONTHS.map((label, idx) => (
-            <option key={label} value={idx + 1}>{label}</option>
-          ))}
-        </select>
-        <input
-          type="number"
-          aria-label="Year"
-          value={year}
-          disabled={!filterEnabled}
-          min={1970}
-          max={9999}
-          onChange={(e) => setYear(Number(e.target.value))}
-          className={inputClass + ' max-w-[6rem]'}
+      {/* Summary strip */}
+      <div
+        className="no-scrollbar"
+        style={{ display: 'flex', gap: 12, marginBottom: 20, overflowX: 'auto' }}
+      >
+        <SummaryChip label="Income" value={format(totalIncome)} color="var(--green)" />
+        <SummaryChip label="Expenses" value={format(totalExpense)} color="var(--red)" />
+        <SummaryChip
+          label="Balance"
+          value={format(balance)}
+          color={balance >= 0 ? 'var(--accent)' : 'var(--red)'}
         />
       </div>
 
+      {/* Filter bar */}
+      <div
+        className="no-scrollbar"
+        style={{
+          display: 'flex',
+          gap: 8,
+          alignItems: 'center',
+          marginBottom: 20,
+          overflowX: 'auto',
+          paddingBottom: 4,
+          flexWrap: 'nowrap',
+        }}
+      >
+        <div style={{ flexShrink: 0, width: 240, maxWidth: '60vw' }}>
+          <Input
+            prefix={<Search size={16} />}
+            placeholder="Search transactions..."
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setVisibleCount(PAGE_SIZE);
+            }}
+          />
+        </div>
+
+        {TYPE_FILTERS.map((f) => (
+          <FilterPill
+            key={f.id}
+            active={activeFilter === f.id}
+            onClick={() => {
+              setActiveFilter(f.id);
+              setVisibleCount(PAGE_SIZE);
+            }}
+          >
+            {f.label}
+          </FilterPill>
+        ))}
+        {CATEGORY_FILTERS.map((c) => (
+          <FilterPill
+            key={c}
+            active={activeFilter === c}
+            onClick={() => {
+              setActiveFilter(c);
+              setVisibleCount(PAGE_SIZE);
+            }}
+          >
+            {c}
+          </FilterPill>
+        ))}
+
+        {/* Month navigator */}
+        <div
+          style={{
+            marginLeft: 'auto',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            flexShrink: 0,
+          }}
+        >
+          <IconBtn icon={ChevronLeft} label="Previous month" onClick={prevMonth} />
+          <span
+            style={{
+              fontSize: 13,
+              fontWeight: 500,
+              color: 'var(--text-primary)',
+              whiteSpace: 'nowrap',
+              minWidth: 64,
+              textAlign: 'center',
+            }}
+          >
+            {MONTHS[month - 1]} {year}
+          </span>
+          <IconBtn icon={ChevronRight} label="Next month" onClick={nextMonth} />
+        </div>
+      </div>
+
       {error && (
-        <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p
+          role="alert"
+          style={{
+            background: 'var(--red-muted)',
+            color: 'var(--red)',
+            borderRadius: 'var(--radius-md)',
+            padding: '8px 12px',
+            fontSize: 13,
+            marginBottom: 20,
+          }}
+        >
           {error}
         </p>
       )}
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <SummaryColumn
-          title="Income by category"
-          rows={summary.income}
-          total={totalIncome}
-          format={format}
-        />
-        <SummaryColumn
-          title="Expense by category"
-          rows={summary.expense}
-          total={totalExpense}
-          format={format}
-        />
-      </div>
-
-      {loading ? (
-        <p className="text-sm text-slate-500">Loading…</p>
-      ) : items.length === 0 ? (
-        <EmptyState
-          message="No transactions yet. Add your first one."
-          actionLabel="New transaction"
-          onAction={openCreate}
-        />
+      {filtered.length === 0 ? (
+        <EmptyState onAdd={openCreate} />
       ) : (
         <>
-          {/* Desktop / tablet: table */}
-          <div className="hidden overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm md:block">
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
-              <thead className="bg-slate-50">
-                <tr>
-                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-500">Date</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-500">Type</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-500">Category</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-500">Description</th>
-                  <th className="px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-slate-500">Amount</th>
-                  <th className="px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-slate-500">Actions</th>
+          {/* Desktop table */}
+          <div
+            className="hidden md:block"
+            style={{
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-lg)',
+              overflow: 'hidden',
+              boxShadow: 'var(--shadow-sm)',
+            }}
+          >
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border)' }}>
+                  <Th>Date</Th>
+                  <Th>Description</Th>
+                  <Th>Category</Th>
+                  <Th align="right">Amount</Th>
+                  <Th align="right">Actions</Th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 bg-white">
-                {items.map((tx) => (
-                  <tr key={tx._id}>
-                    <td className="px-4 py-2 text-slate-600">{formatDate(tx.date)}</td>
-                    <td className="px-4 py-2">
-                      <TypeBadge type={tx.type} />
-                    </td>
-                    <td className="px-4 py-2">{tx.category}</td>
-                    <td className="px-4 py-2 text-slate-600">{tx.description || '—'}</td>
-                    <td className="px-4 py-2 text-right tabular-nums">
-                      {format(tx.amount)}
-                    </td>
-                    <td className="px-4 py-2 text-right">
-                      <div className="flex justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => openEdit(tx)}
-                          className="text-xs font-medium text-indigo-600 hover:underline"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(tx)}
-                          className="text-xs font-medium text-red-600 hover:underline"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+              <tbody>
+                {shown.map((tx, idx) => {
+                  const { color } = categoryVisual(tx.category, tx.type);
+                  const income = tx.type === 'income';
+                  return (
+                    <tr
+                      key={tx._id}
+                      className="tx-row"
+                      style={{
+                        borderBottom:
+                          idx === shown.length - 1 ? 'none' : '1px solid var(--border-subtle)',
+                      }}
+                    >
+                      <Td style={{ fontSize: 13, color: 'var(--text-muted)' }}>{shortDate(tx.date)}</Td>
+                      <Td style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>
+                        {tx.description || tx.category}
+                      </Td>
+                      <Td>
+                        <CategoryChip category={tx.category} color={color} />
+                      </Td>
+                      <Td
+                        align="right"
+                        style={{
+                          fontSize: 14,
+                          fontWeight: 600,
+                          fontVariantNumeric: 'tabular-nums',
+                          color: income ? 'var(--green)' : 'var(--red)',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {income ? '+' : '-'}
+                        {format(tx.amount)}
+                      </Td>
+                      <Td align="right">
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4 }}>
+                          <IconBtn icon={Pencil} label="Edit" onClick={() => openEdit(tx)} />
+                          <IconBtn icon={Trash2} label="Delete" danger onClick={() => handleDelete(tx)} />
+                        </div>
+                      </Td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
 
-          {/* Mobile: card list */}
-          <ul className="space-y-3 md:hidden">
-            {items.map((tx) => (
-              <li
-                key={tx._id}
-                className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <TypeBadge type={tx.type} />
-                      <span className="truncate font-medium text-slate-900">
-                        {tx.category}
-                      </span>
-                    </div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      {formatDate(tx.date)}
-                    </div>
-                    {tx.description && (
-                      <div className="mt-1 break-words text-sm text-slate-600">
-                        {tx.description}
+          {/* Mobile cards */}
+          <div className="md:hidden" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {shown.map((tx) => {
+              const { Icon, color } = categoryVisual(tx.category, tx.type);
+              const income = tx.type === 'income';
+              return (
+                <div
+                  key={tx._id}
+                  style={{
+                    background: 'var(--bg-surface)',
+                    border: '1px solid var(--border)',
+                    borderLeft: `3px solid ${income ? 'var(--green)' : 'var(--red)'}`,
+                    borderRadius: 'var(--radius-lg)',
+                    padding: '14px 16px',
+                    boxShadow: 'var(--shadow-sm)',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <span
+                      style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: '50%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: `color-mix(in srgb, ${color} 12%, transparent)`,
+                        color,
+                        flexShrink: 0,
+                      }}
+                    >
+                      <Icon size={16} strokeWidth={1.75} />
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontSize: 14,
+                          fontWeight: 500,
+                          color: 'var(--text-primary)',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {tx.description || tx.category}
                       </div>
-                    )}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
+                        <span style={{ fontSize: 11, fontWeight: 500, color }}>{tx.category}</span>
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                          {shortDate(tx.date)}
+                        </span>
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 15,
+                        fontWeight: 700,
+                        fontVariantNumeric: 'tabular-nums',
+                        whiteSpace: 'nowrap',
+                        color: income ? 'var(--green)' : 'var(--red)',
+                      }}
+                    >
+                      {income ? '+' : '-'}
+                      {format(tx.amount)}
+                    </div>
+                    <IconBtn
+                      icon={MoreVertical}
+                      label="More"
+                      onClick={() => setMenuId(menuId === tx._id ? null : tx._id)}
+                    />
                   </div>
-                  <div
-                    className={`shrink-0 text-right text-base font-semibold tabular-nums whitespace-nowrap ${
-                      tx.type === 'income' ? 'text-emerald-600' : 'text-slate-900'
-                    }`}
-                  >
-                    {format(tx.amount)}
-                  </div>
+                  {menuId === tx._id && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        gap: 8,
+                        marginTop: 12,
+                        paddingTop: 12,
+                        borderTop: '1px solid var(--border-subtle)',
+                      }}
+                    >
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        fullWidth
+                        onClick={() => {
+                          setMenuId(null);
+                          openEdit(tx);
+                        }}
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        fullWidth
+                        onClick={() => {
+                          setMenuId(null);
+                          handleDelete(tx);
+                        }}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  )}
                 </div>
-                <div className="mt-3 flex gap-2 border-t border-slate-100 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => openEdit(tx)}
-                    className="flex min-h-[44px] flex-1 items-center justify-center rounded-md border border-slate-300 text-sm font-medium text-indigo-600 hover:bg-slate-50"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(tx)}
-                    className="flex min-h-[44px] flex-1 items-center justify-center rounded-md border border-slate-300 text-sm font-medium text-red-600 hover:bg-red-50"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
+              );
+            })}
+          </div>
+
+          {/* Load more + count */}
+          {filtered.length > shown.length && (
+            <div style={{ textAlign: 'center', marginTop: 16 }}>
+              <Button variant="ghost" onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}>
+                Load more transactions
+                <ChevronDown size={16} strokeWidth={2} />
+              </Button>
+            </div>
+          )}
+          <div
+            style={{
+              fontSize: 12,
+              color: 'var(--text-muted)',
+              textAlign: 'center',
+              marginTop: 12,
+            }}
+          >
+            Showing {shown.length} of {filtered.length} transactions
+          </div>
         </>
       )}
 
+      {/* Add / Edit modal */}
       <Modal
         open={modalOpen}
-        title={editing ? 'Edit transaction' : 'New transaction'}
         onClose={() => setModalOpen(false)}
-        footer={
-          <>
-            <button
-              type="button"
-              onClick={() => setModalOpen(false)}
-              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              form="transaction-form"
-              disabled={submitting}
-              className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:bg-indigo-400"
-            >
-              {submitting ? 'Saving…' : 'Save'}
-            </button>
-          </>
-        }
+        title={editing ? 'Edit Transaction' : 'Add Transaction'}
       >
-        <form id="transaction-form" onSubmit={handleSubmit} className="space-y-3">
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {formError && (
-            <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+            <p
+              role="alert"
+              style={{
+                background: 'var(--red-muted)',
+                color: 'var(--red)',
+                borderRadius: 'var(--radius-md)',
+                padding: '8px 12px',
+                fontSize: 13,
+              }}
+            >
               {formError}
             </p>
           )}
-          <Field label="Type" htmlFor="tx-type">
-            <select
-              id="tx-type"
-              value={form.type}
-              onChange={(e) => setForm({ ...form, type: e.target.value })}
-              className={inputClass}
-            >
-              {TYPES.map((t) => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Category" htmlFor="tx-category">
-            <input
-              id="tx-category"
-              type="text"
-              required
-              maxLength={100}
-              value={form.category}
-              onChange={(e) => setForm({ ...form, category: e.target.value })}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Amount" htmlFor="tx-amount" hint="Greater than 0, up to 2 decimal places">
-            <input
-              id="tx-amount"
-              type="number"
-              step="0.01"
-              min="0.01"
-              max="999999999.99"
-              required
-              value={form.amount}
-              onChange={(e) => setForm({ ...form, amount: e.target.value })}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Date" htmlFor="tx-date">
-            <input
-              id="tx-date"
-              type="date"
-              value={form.date}
-              onChange={(e) => setForm({ ...form, date: e.target.value })}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Description" htmlFor="tx-desc">
-            <textarea
-              id="tx-desc"
-              rows={2}
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-              className={inputClass}
-            />
-          </Field>
+
+          {/* Type toggle */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {TYPES.map((t) => {
+              const active = form.type === t;
+              return (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setForm({ ...form, type: t })}
+                  style={{
+                    textTransform: 'capitalize',
+                    borderRadius: 'var(--radius-full)',
+                    padding: '10px 0',
+                    fontSize: 14,
+                    fontWeight: 500,
+                    fontFamily: 'Poppins',
+                    cursor: 'pointer',
+                    border: '1px solid ' + (active ? 'var(--accent)' : 'var(--border)'),
+                    background: active ? 'var(--accent)' : 'var(--bg-elevated)',
+                    color: active ? '#fff' : 'var(--text-secondary)',
+                    transition: 'all 150ms var(--ease)',
+                  }}
+                >
+                  {t}
+                </button>
+              );
+            })}
+          </div>
+
+          <Input
+            label="Amount"
+            prefix="₹"
+            type="number"
+            step="0.01"
+            min="0.01"
+            max="999999999.99"
+            required
+            value={form.amount}
+            onChange={(e) => setForm({ ...form, amount: e.target.value })}
+          />
+          <Input
+            label="Category"
+            type="text"
+            required
+            maxLength={100}
+            value={form.category}
+            onChange={(e) => setForm({ ...form, category: e.target.value })}
+          />
+          <Input
+            label="Description"
+            type="text"
+            value={form.description}
+            onChange={(e) => setForm({ ...form, description: e.target.value })}
+          />
+          <Input
+            label="Date"
+            type="date"
+            value={form.date}
+            onChange={(e) => setForm({ ...form, date: e.target.value })}
+          />
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 }}>
+            <Button variant="secondary" onClick={() => setModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" type="submit" loading={submitting}>
+              Save
+            </Button>
+          </div>
         </form>
       </Modal>
-    </section>
+    </div>
   );
 }
 
-function TypeBadge({ type }) {
+/* ── Presentational helpers ────────────────────────────────────────────────*/
+
+function SummaryChip({ label, value, color }) {
+  return (
+    <div
+      style={{
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius-lg)',
+        padding: '14px 18px',
+        flex: 1,
+        flexShrink: 0,
+        minWidth: 140,
+        boxShadow: 'var(--shadow-sm)',
+      }}
+    >
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 500,
+          textTransform: 'uppercase',
+          letterSpacing: '0.06em',
+          color: 'var(--text-muted)',
+        }}
+      >
+        {label}
+      </div>
+      <div style={{ fontSize: 20, fontWeight: 700, fontVariantNumeric: 'tabular-nums', color, marginTop: 4 }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function FilterPill({ active, onClick, children }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        borderRadius: 'var(--radius-full)',
+        padding: '7px 16px',
+        fontSize: 13,
+        fontWeight: 500,
+        fontFamily: 'Poppins',
+        cursor: 'pointer',
+        whiteSpace: 'nowrap',
+        flexShrink: 0,
+        transition: 'all 150ms var(--ease)',
+        border: '1px solid ' + (active ? 'var(--accent)' : 'var(--border)'),
+        background: active ? 'var(--accent)' : hover ? 'var(--bg-hover)' : 'var(--bg-surface)',
+        color: active ? '#fff' : hover ? 'var(--text-primary)' : 'var(--text-secondary)',
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function IconBtn({ icon: Icon, onClick, danger, label }) {
+  const [hover, setHover] = useState(false);
+  const color = danger
+    ? hover
+      ? 'var(--red)'
+      : 'var(--text-muted)'
+    : hover
+      ? 'var(--text-primary)'
+      : 'var(--text-muted)';
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        width: 32,
+        height: 32,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: 'var(--radius-md)',
+        border: 'none',
+        cursor: 'pointer',
+        background: hover ? 'var(--bg-hover)' : 'transparent',
+        color,
+        flexShrink: 0,
+        transition: 'all 150ms var(--ease)',
+      }}
+    >
+      <Icon size={16} strokeWidth={1.75} />
+    </button>
+  );
+}
+
+function CategoryChip({ category, color }) {
   return (
     <span
-      className={
-        type === 'income'
-          ? 'rounded bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700'
-          : 'rounded bg-red-50 px-2 py-0.5 text-xs text-red-700'
-      }
+      style={{
+        background: `color-mix(in srgb, ${color} 12%, transparent)`,
+        color,
+        borderRadius: 'var(--radius-full)',
+        padding: '3px 10px',
+        fontSize: 12,
+        fontWeight: 500,
+        whiteSpace: 'nowrap',
+      }}
     >
-      {type}
+      {category}
     </span>
   );
 }
 
-function SummaryColumn({ title, rows, total, format }) {
+function Th({ children, align = 'left' }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
-        <span className="text-sm font-medium text-slate-700 tabular-nums whitespace-nowrap">
-          {format(total)}
-        </span>
+    <th
+      style={{
+        fontSize: 11,
+        fontWeight: 500,
+        textTransform: 'uppercase',
+        letterSpacing: '0.06em',
+        color: 'var(--text-muted)',
+        padding: '12px 16px',
+        textAlign: align,
+      }}
+    >
+      {children}
+    </th>
+  );
+}
+
+function Td({ children, align = 'left', style }) {
+  return <td style={{ padding: '14px 16px', textAlign: align, ...style }}>{children}</td>;
+}
+
+function EmptyState({ onAdd }) {
+  return (
+    <div
+      style={{
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius-lg)',
+        boxShadow: 'var(--shadow-sm)',
+        padding: '60px 20px',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        textAlign: 'center',
+      }}
+    >
+      <ArrowLeftRight size={48} strokeWidth={1.5} color="var(--text-muted)" />
+      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-secondary)', marginTop: 12 }}>
+        No transactions found
       </div>
-      {rows.length === 0 ? (
-        <p className="mt-3 text-sm text-slate-500">No data.</p>
-      ) : (
-        <ul className="mt-3 divide-y divide-slate-100 text-sm">
-          {rows.map((row) => (
-            <li key={row.category} className="flex items-center justify-between gap-3 py-2">
-              <span className="min-w-0 truncate text-slate-700">{row.category}</span>
-              <span className="shrink-0 text-slate-900 tabular-nums whitespace-nowrap">
-                {format(row.total)}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
+        Try adjusting your filters or add a new transaction
+      </div>
+      <div style={{ marginTop: 16 }}>
+        <Button variant="ghost" onClick={onAdd}>
+          <Plus size={16} strokeWidth={2} />
+          Add Transaction
+        </Button>
+      </div>
     </div>
   );
 }
