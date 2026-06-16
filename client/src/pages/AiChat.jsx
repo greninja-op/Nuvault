@@ -38,7 +38,7 @@ const AI_MODEL = 'Gemini 3 Flash';
  */
 function buildPrompts(summary) {
   const s = summary || {};
-  const inr = (n) => formatCurrency(n, 'INR');
+  const inr = (n) => formatCurrency(n, 'INR').replace(/\.00$/, '');
 
   return [
     s.investmentTotal > 0
