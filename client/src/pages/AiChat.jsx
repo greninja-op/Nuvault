@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Copy, Send, Sparkles, Trash2 } from 'lucide-react';
 import apiClient from '../api/client';
-import { extractError } from '../lib/format';
+import { extractError, formatCurrency } from '../lib/format';
 import { sanitizeInput } from '../utils/sanitize';
 import AiAdvisorSkeleton from '../components/skeletons/AiAdvisorSkeleton';
 import ChatCharts from '../components/ChatCharts';
@@ -31,23 +31,34 @@ import Badge from '../components/ui/Badge';
 const AI_MODEL = 'Gemini 3 Flash';
 
 /**
- * Starter prompts shown above the input.
- *
- * NOTE: These are static. Truly data-aware prompts (e.g. "How is my ₹X
- * portfolio performing?") would need the user's financial figures, but this
- * component never fetches that data — the snapshot is assembled entirely
- * server-side inside POST /ai/chat and is never returned to the client. With
- * no client-side financial state and a hard "no new API calls" constraint,
- * every prompt resolves to its static fallback, so the set stays static.
+ * Build the six starter prompts. Each is data-aware when the relevant field
+ * of the `/api/summary` aggregate is present, and falls back to a sensible
+ * static prompt when `summary` is null (not yet loaded / fetch failed) or the
+ * field is 0/null. ₹ amounts use the app's shared INR formatter.
  */
-const QUICK_PROMPTS = [
-  'Give me an investment plan for ₹5,000/month',
-  'Give me an investment plan for ₹10,000/month',
-  'Show my portfolio allocation',
-  'How am I doing this month?',
-  'Where am I overspending?',
-  'What bills are due soon?',
-];
+function buildPrompts(summary) {
+  const s = summary || {};
+  const inr = (n) => formatCurrency(n, 'INR');
+
+  return [
+    s.investmentTotal > 0
+      ? `How is my ${inr(s.investmentTotal)} portfolio performing?`
+      : 'How should I start investing my savings?',
+    s.billsDueSoonCount > 0
+      ? `I have ${s.billsDueSoonCount} bill${s.billsDueSoonCount === 1 ? '' : 's'} due this week — which to pay first?`
+      : 'How can I better manage my monthly bills?',
+    s.firstGoalName
+      ? `Am I on track for my ${s.firstGoalName} goal?`
+      : 'How do I set a realistic savings goal?',
+    s.liabilityTotal > 0
+      ? `How should I pay down my ${inr(s.liabilityTotal)} debt?`
+      : "What's the best way to stay debt-free?",
+    s.hasAssets
+      ? 'Am I diversifying my assets well enough?'
+      : 'What assets should I prioritize building first?',
+    'Give me an overall summary of my finances',
+  ];
+}
 
 /**
  * Human-readable labels for each snapshot section the backend can include.
@@ -119,7 +130,10 @@ export default function AiChat() {
   const [clearing, setClearing] = useState(false);
   const [error, setError] = useState(null);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [summaryData, setSummaryData] = useState(null);
   const scrollRef = useRef(null);
+
+  const quickPrompts = useMemo(() => buildPrompts(summaryData), [summaryData]);
 
   // Restore the saved conversation on mount.
   useEffect(() => {
@@ -134,6 +148,23 @@ export default function AiChat() {
         // A failed restore is non-fatal — start with an empty chat.
       } finally {
         if (active) setInitialLoading(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Fetch the lightweight financial summary for data-aware starter prompts.
+  // Independent of the history load — fails silently, leaving static prompts.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const { data } = await apiClient.get('/summary');
+        if (active && data && typeof data === 'object') setSummaryData(data);
+      } catch {
+        /* silent — prompts stay on their static fallbacks */
       }
     })();
     return () => {
@@ -284,7 +315,7 @@ export default function AiChat() {
         className="no-scrollbar"
         style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, flexShrink: 0, marginBottom: 12 }}
       >
-        {QUICK_PROMPTS.map((prompt) => (
+        {quickPrompts.map((prompt) => (
           <PromptChip key={prompt} disabled={submitting} onClick={() => send(prompt)}>
             {prompt}
           </PromptChip>

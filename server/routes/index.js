@@ -40,6 +40,7 @@ const transactionsRouter = require('./transactions');
 const aiRouter = require('./ai');
 const fxRouter = require('./fx');
 const snapshotsRouter = require('./snapshots');
+const summaryRouter = require('./summary');
 /** @type {import('express').Router} */
 const publicRouter = express.Router();
 
@@ -110,6 +111,10 @@ protectedRouter.use('/fx', fxRouter);
 // protectedRouter keeps it behind the JWT `protect` middleware like every
 // other domain route, instead of an unauthenticated app-level mount.)
 protectedRouter.use('/snapshots', snapshotsRouter);
+
+// Summary surface — a single read-only aggregate (totals/counts) used by the
+// AI advisor to build data-aware starter prompts. Additive and fully scoped.
+protectedRouter.use('/summary', summaryRouter);
 
 module.exports = {
   publicRouter,
