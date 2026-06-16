@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   AlertCircle,
+  AlertTriangle,
   CheckCircle2,
   Clock,
   CreditCard,
@@ -9,6 +10,7 @@ import {
   Phone,
   Plus,
   Receipt,
+  Repeat,
   Shield,
   Trash2,
   Tv,
@@ -57,6 +59,12 @@ function shortDate(value) {
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 }
 
+/** Human-friendly recurring frequency label. */
+function freqLabel(frequency) {
+  const map = { monthly: 'Monthly', weekly: 'Weekly', yearly: 'Yearly', 'one-time': 'One-time' };
+  return map[frequency] ?? frequency;
+}
+
 /** Map a bill's category/name to an icon + accent color. */
 function billVisual(category, name) {
   const c = `${category || ''} ${name || ''}`.toLowerCase();
@@ -102,6 +110,9 @@ export default function Bills() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [formError, setFormError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -192,12 +203,16 @@ export default function Bills() {
   }
 
   async function handleDelete(bill) {
-    if (typeof window !== 'undefined' && !window.confirm(`Delete ${bill.name}?`)) return;
+    if (!bill || deleting) return;
+    setDeleting(true);
     try {
       await apiClient.delete(`/bills/${bill._id}`);
+      setDeleteTarget(null);
       await load();
     } catch (err) {
       setError(extractError(err, 'Unable to delete bill'));
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -227,9 +242,9 @@ export default function Bills() {
   const paidThisMonth = groups.paid.reduce((s, b) => s + (Number(b.amount) || 0), 0);
 
   const SECTIONS = [
-    { key: 'overdue', label: 'Overdue', icon: AlertCircle, color: 'var(--red)', muted: 'var(--red-muted)' },
-    { key: 'upcoming', label: 'Upcoming', icon: Clock, color: 'var(--amber)', muted: 'var(--amber-muted)' },
-    { key: 'paid', label: 'Paid This Month', icon: CheckCircle2, color: 'var(--green)', muted: 'var(--green-muted)' },
+    { key: 'overdue', label: 'Overdue', icon: AlertCircle, color: 'var(--red)', muted: 'var(--red-muted)', labelColor: 'var(--red)', badge: 'danger' },
+    { key: 'upcoming', label: 'Upcoming', icon: Clock, color: 'var(--amber)', muted: 'var(--amber-muted)', labelColor: 'var(--text-primary)', badge: 'default' },
+    { key: 'paid', label: 'Paid', icon: CheckCircle2, color: 'var(--green)', muted: 'var(--green-muted)', labelColor: 'var(--text-secondary)', badge: 'success' },
   ];
 
   if (loading) return <BillsSkeleton />;
@@ -250,11 +265,13 @@ export default function Bills() {
           <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.3px' }}>
             Bills
           </h1>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>Never miss a payment</p>
+          <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 4 }}>
+            Never miss a due date again.
+          </p>
         </div>
         <Button variant="primary" onClick={openCreate}>
           <Plus size={16} strokeWidth={2} />
-          Add Bill
+          New bill
         </Button>
       </div>
 
@@ -320,10 +337,10 @@ export default function Bills() {
                   >
                     <Icon size={12} strokeWidth={2.25} />
                   </span>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                  <span style={{ fontSize: 15, fontWeight: 600, color: section.labelColor }}>
                     {section.label}
                   </span>
-                  <Badge variant="default">{group.length}</Badge>
+                  <Badge variant={section.badge}>{group.length}</Badge>
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -336,7 +353,7 @@ export default function Bills() {
                       format={format}
                       onPay={() => handlePay(bill)}
                       onEdit={() => openEdit(bill)}
-                      onDelete={() => handleDelete(bill)}
+                      onDelete={() => setDeleteTarget(bill)}
                     />
                   ))}
                 </div>
@@ -419,6 +436,25 @@ export default function Bills() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Delete confirmation */}
+      <Modal open={Boolean(deleteTarget)} onClose={() => setDeleteTarget(null)} title="" maxWidth={360}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 6 }}>
+          <AlertTriangle size={40} strokeWidth={1.75} color="var(--red)" />
+          <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginTop: 6 }}>
+            Delete this bill?
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>This action cannot be undone.</div>
+          <div style={{ display: 'flex', gap: 10, marginTop: 16, width: '100%' }}>
+            <Button variant="secondary" fullWidth onClick={() => setDeleteTarget(null)}>
+              Cancel
+            </Button>
+            <Button variant="danger" fullWidth loading={deleting} onClick={() => handleDelete(deleteTarget)}>
+              Delete
+            </Button>
+          </div>
+        </div>
       </Modal>
     </div>
   );
@@ -508,17 +544,28 @@ function BillCard({ bill, status, isMobile, format, onPay, onEdit, onDelete }) {
 
       {/* Middle */}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div
-          style={{
-            fontSize: 15,
-            fontWeight: 600,
-            color: 'var(--text-primary)',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {bill.name}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+          <span
+            style={{
+              fontSize: 15,
+              fontWeight: 600,
+              color: status === 'paid' ? 'var(--text-secondary)' : 'var(--text-primary)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {bill.name}
+          </span>
+          {bill.frequency && bill.frequency !== 'one-time' && (
+            <span
+              title={freqLabel(bill.frequency)}
+              aria-label={freqLabel(bill.frequency)}
+              style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--text-muted)', flexShrink: 0 }}
+            >
+              <Repeat size={13} strokeWidth={1.75} />
+            </span>
+          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
           {bill.category && (
@@ -548,6 +595,7 @@ function BillCard({ bill, status, isMobile, format, onPay, onEdit, onDelete }) {
           {badge}
           {status !== 'paid' && (
             <Button variant={payVariant} size="sm" onClick={onPay}>
+              <CheckCircle2 size={14} strokeWidth={2} />
               Pay
             </Button>
           )}
@@ -674,16 +722,16 @@ function EmptyState({ onAdd }) {
       }}
     >
       <Receipt size={48} strokeWidth={1.5} color="var(--text-muted)" />
-      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-secondary)', marginTop: 12 }}>
-        No bills added
+      <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginTop: 12 }}>
+        No bills yet
       </div>
-      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
-        Track recurring payments so nothing surprises you
+      <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 6 }}>
+        Add your recurring bills and subscriptions to stay on top of due dates.
       </div>
       <div style={{ marginTop: 16 }}>
         <Button variant="primary" onClick={onAdd}>
           <Plus size={16} strokeWidth={2} />
-          Add Your First Bill
+          New bill
         </Button>
       </div>
     </div>
