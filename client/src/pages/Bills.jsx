@@ -1,37 +1,33 @@
 import { useEffect, useState } from 'react';
+import {
+  AlertCircle,
+  CheckCircle2,
+  Clock,
+  CreditCard,
+  Home,
+  Pencil,
+  Phone,
+  Plus,
+  Receipt,
+  Shield,
+  Trash2,
+  Tv,
+  Wifi,
+  Zap,
+} from 'lucide-react';
 import apiClient from '../api/client';
-import Field, { inputClass } from '../components/Field';
-import Modal from '../components/Modal';
 import { useDisplayCurrency } from '../currency/CurrencyContext';
-import { extractError, formatCurrency, formatDate } from '../lib/format';
+import { extractError } from '../lib/format';
 import { sanitizeInput } from '../utils/sanitize';
 import BillsSkeleton from '../components/skeletons/BillsSkeleton';
-import EmptyState from '../components/EmptyState';
+import useWindowSize from '../hooks/useWindowSize';
+import Input from '../components/ui/Input';
+import Button from '../components/ui/Button';
+import Badge from '../components/ui/Badge';
+import Toggle from '../components/ui/Toggle';
+import Modal from '../components/ui/Modal';
 
 const FREQUENCIES = ['monthly', 'weekly', 'yearly', 'one-time'];
-
-/** Mobile section order + titles for the grouped bill view. */
-const BILL_GROUPS = [
-  { key: 'overdue', title: 'Overdue' },
-  { key: 'upcoming', title: 'Upcoming' },
-  { key: 'paid', title: 'Paid' },
-];
-
-/**
- * Whole days from now until `dueDate` (negative = overdue). Returns a
- * large positive sentinel for missing/invalid dates so they never count
- * as overdue.
- */
-function daysUntil(dueDate) {
-  if (!dueDate) return Number.POSITIVE_INFINITY;
-  const due = new Date(dueDate);
-  if (Number.isNaN(due.getTime())) return Number.POSITIVE_INFINITY;
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
-  const startOfDue = new Date(due);
-  startOfDue.setHours(0, 0, 0, 0);
-  return Math.round((startOfDue - startOfToday) / 86400000);
-}
 
 const EMPTY_FORM = {
   name: '',
@@ -43,13 +39,60 @@ const EMPTY_FORM = {
   isPaid: false,
 };
 
+/** Whole days from today until `dueDate` (negative = overdue). */
+function daysUntil(dueDate) {
+  if (!dueDate) return Number.POSITIVE_INFINITY;
+  const due = new Date(dueDate);
+  if (Number.isNaN(due.getTime())) return Number.POSITIVE_INFINITY;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const d = new Date(due);
+  d.setHours(0, 0, 0, 0);
+  return Math.round((d - today) / 86400000);
+}
+
+function shortDate(value) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+}
+
+/** Map a bill's category/name to an icon + accent color. */
+function billVisual(category, name) {
+  const c = `${category || ''} ${name || ''}`.toLowerCase();
+  if (c.includes('rent') || c.includes('housing') || c.includes('home') || c.includes('mortgage'))
+    return { Icon: Home, color: '#06b6d4' };
+  if (c.includes('electric') || c.includes('power') || c.includes('energy'))
+    return { Icon: Zap, color: '#f59e0b' };
+  if (c.includes('internet') || c.includes('wifi') || c.includes('broadband'))
+    return { Icon: Wifi, color: '#7c6ee8' };
+  if (c.includes('phone') || c.includes('mobile'))
+    return { Icon: Phone, color: '#a78bfa' };
+  if (
+    c.includes('stream') || c.includes('netflix') || c.includes('ott') ||
+    c.includes('prime') || c.includes('spotify') || c.includes('hotstar')
+  )
+    return { Icon: Tv, color: '#ef4444' };
+  if (c.includes('insurance')) return { Icon: Shield, color: '#22c55e' };
+  if (c.includes('subscription') || c.includes('sub')) return { Icon: CreditCard, color: '#f59e0b' };
+  return { Icon: Receipt, color: '#a1a1aa' };
+}
+
 /**
- * Bills list with create/edit/delete and a "Pay" action that calls
- * `PATCH /bills/:id/pay`. The backend handles advancement for recurring
- * bills and one-time settlement; the client simply re-fetches.
+ * Bills list grouped into Overdue / Upcoming / Paid, with create/edit/delete
+ * and a "Pay" action (`PATCH /bills/:id/pay`). The backend advances recurring
+ * bills and settles one-time bills; the client just re-fetches.
+ *
+ * Backend endpoints (unchanged):
+ *   GET    /bills
+ *   POST   /bills
+ *   PUT    /bills/:id
+ *   DELETE /bills/:id
+ *   PATCH  /bills/:id/pay
  */
 export default function Bills() {
-  const { displayCurrency, format } = useDisplayCurrency();
+  const { format } = useDisplayCurrency();
+  const { isMobile } = useWindowSize();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -168,338 +211,481 @@ export default function Bills() {
     }
   }
 
-  // Group bills for the mobile sectioned view: Paid first goes to "paid";
-  // an unpaid bill whose next due date is before today is "overdue", else
-  // "upcoming".
-  const groupedBills = { overdue: [], upcoming: [], paid: [] };
+  // Group: paid → paid; unpaid past due → overdue; else upcoming.
+  const groups = { overdue: [], upcoming: [], paid: [] };
   for (const bill of items) {
-    if (bill.isPaid) {
-      groupedBills.paid.push(bill);
-    } else if (daysUntil(bill.nextDueDate) < 0) {
-      groupedBills.overdue.push(bill);
-    } else {
-      groupedBills.upcoming.push(bill);
-    }
+    if (bill.isPaid) groups.paid.push(bill);
+    else if (daysUntil(bill.nextDueDate) < 0) groups.overdue.push(bill);
+    else groups.upcoming.push(bill);
   }
+  groups.upcoming.sort((a, b) => new Date(a.nextDueDate) - new Date(b.nextDueDate));
+
+  const dueThisMonth = [...groups.overdue, ...groups.upcoming].reduce(
+    (s, b) => s + (Number(b.amount) || 0),
+    0,
+  );
+  const paidThisMonth = groups.paid.reduce((s, b) => s + (Number(b.amount) || 0), 0);
+
+  const SECTIONS = [
+    { key: 'overdue', label: 'Overdue', icon: AlertCircle, color: 'var(--red)', muted: 'var(--red-muted)' },
+    { key: 'upcoming', label: 'Upcoming', icon: Clock, color: 'var(--amber)', muted: 'var(--amber-muted)' },
+    { key: 'paid', label: 'Paid This Month', icon: CheckCircle2, color: 'var(--green)', muted: 'var(--green-muted)' },
+  ];
 
   if (loading) return <BillsSkeleton />;
 
   return (
-    <section className="space-y-4">
-      <header className="flex flex-wrap items-center justify-between gap-3">
+    <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+      {/* Header */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 12,
+          marginBottom: 24,
+        }}
+      >
         <div>
-          <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Bills</h1>
-          <p className="text-sm text-slate-600">
-            Recurring and one-time payment obligations.
-          </p>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.3px' }}>
+            Bills
+          </h1>
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>Never miss a payment</p>
         </div>
-        <button
-          type="button"
-          onClick={openCreate}
-          className="flex min-h-[44px] w-full items-center justify-center rounded-md bg-indigo-600 px-4 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 sm:w-auto"
-        >
-          New bill
-        </button>
-      </header>
+        <Button variant="primary" onClick={openCreate}>
+          <Plus size={16} strokeWidth={2} />
+          Add Bill
+        </Button>
+      </div>
 
       {error && (
-        <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p
+          role="alert"
+          style={{
+            background: 'var(--red-muted)',
+            color: 'var(--red)',
+            borderRadius: 'var(--radius-md)',
+            padding: '8px 12px',
+            fontSize: 13,
+            marginBottom: 20,
+          }}
+        >
           {error}
         </p>
       )}
 
-      {loading ? (
-        <p className="text-sm text-slate-500">Loading…</p>
-      ) : items.length === 0 ? (
-        <EmptyState
-          message="No bills added. Add your first bill."
-          actionLabel="New bill"
-          onAction={openCreate}
-        />
+      {items.length === 0 ? (
+        <EmptyState onAdd={openCreate} />
       ) : (
         <>
-          {/* Desktop / tablet: table */}
-          <div className="hidden overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm md:block">
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
-              <thead className="bg-slate-50">
-                <tr>
-                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-500">Name</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-500">Frequency</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-500">Next due</th>
-                  <th className="px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-slate-500">Amount</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-500">Status</th>
-                  <th className="px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-slate-500">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 bg-white">
-                {items.map((bill) => (
-                  <tr key={bill._id}>
-                    <td className="px-4 py-2">
-                      <div className="font-medium text-slate-900">{bill.name}</div>
-                      {bill.category && (
-                        <div className="text-xs text-slate-500">{bill.category}</div>
-                      )}
-                    </td>
-                    <td className="px-4 py-2 text-slate-600">{bill.frequency}</td>
-                    <td className="px-4 py-2 text-slate-600">{formatDate(bill.nextDueDate)}</td>
-                    <td className="px-4 py-2 text-right tabular-nums">
-                      {format(bill.amount)}
-                    </td>
-                    <td className="px-4 py-2">
-                      {bill.isPaid ? (
-                        <span className="rounded bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">
-                          Paid
-                        </span>
-                      ) : (
-                        <span className="rounded bg-amber-50 px-2 py-0.5 text-xs text-amber-700">
-                          Due
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2 text-right">
-                      <div className="flex justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handlePay(bill)}
-                          disabled={bill.frequency === 'one-time' && bill.isPaid}
-                          className="text-xs font-medium text-emerald-700 hover:underline disabled:cursor-not-allowed disabled:text-slate-400 disabled:no-underline"
-                        >
-                          Pay
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openEdit(bill)}
-                          className="text-xs font-medium text-indigo-600 hover:underline"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(bill)}
-                          className="text-xs font-medium text-red-600 hover:underline"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          {/* Summary strip */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 24 }}>
+            <SummaryChip label="Due This Month" value={format(dueThisMonth)} color="var(--text-primary)" />
+            <SummaryChip
+              label="Overdue"
+              value={String(groups.overdue.length)}
+              color={groups.overdue.length > 0 ? 'var(--red)' : 'var(--text-muted)'}
+            />
+            <SummaryChip label="Paid This Month" value={format(paidThisMonth)} color="var(--green)" />
           </div>
 
-          {/* Mobile: grouped card sections (Overdue / Upcoming / Paid) */}
-          <div className="space-y-5 md:hidden">
-            {BILL_GROUPS.map(({ key, title }) => {
-              const group = groupedBills[key];
-              if (group.length === 0) return null;
-              return (
-                <div key={key}>
-                  <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
-                    {title} ({group.length})
-                  </h2>
-                  <ul className="space-y-3">
-                    {group.map((bill) => (
-                      <BillCard
-                        key={bill._id}
-                        bill={bill}
-                        format={format}
-                        onPay={() => handlePay(bill)}
-                        onEdit={() => openEdit(bill)}
-                        onDelete={() => handleDelete(bill)}
-                      />
-                    ))}
-                  </ul>
+          {/* Sections */}
+          {SECTIONS.map((section, sIdx) => {
+            const group = groups[section.key];
+            if (group.length === 0) return null;
+            const Icon = section.icon;
+            return (
+              <div key={section.key}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    marginTop: sIdx === 0 ? 0 : 24,
+                    marginBottom: 12,
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 20,
+                      height: 20,
+                      borderRadius: '50%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: section.muted,
+                      color: section.color,
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Icon size={12} strokeWidth={2.25} />
+                  </span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                    {section.label}
+                  </span>
+                  <Badge variant="default">{group.length}</Badge>
                 </div>
-              );
-            })}
-          </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {group.map((bill) => (
+                    <BillCard
+                      key={bill._id}
+                      bill={bill}
+                      status={section.key}
+                      isMobile={isMobile}
+                      format={format}
+                      onPay={() => handlePay(bill)}
+                      onEdit={() => openEdit(bill)}
+                      onDelete={() => handleDelete(bill)}
+                    />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </>
       )}
 
-      <Modal
-        open={modalOpen}
-        title={editing ? 'Edit bill' : 'New bill'}
-        onClose={() => setModalOpen(false)}
-        footer={
-          <>
-            <button
-              type="button"
-              onClick={() => setModalOpen(false)}
-              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              form="bill-form"
-              disabled={submitting}
-              className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:bg-indigo-400"
-            >
-              {submitting ? 'Saving…' : 'Save'}
-            </button>
-          </>
-        }
-      >
-        <form id="bill-form" onSubmit={handleSubmit} className="space-y-3">
+      {/* Add / Edit modal */}
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Edit Bill' : 'Add Bill'}>
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {formError && (
-            <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+            <p
+              role="alert"
+              style={{
+                background: 'var(--red-muted)',
+                color: 'var(--red)',
+                borderRadius: 'var(--radius-md)',
+                padding: '8px 12px',
+                fontSize: 13,
+              }}
+            >
               {formError}
             </p>
           )}
-          <Field label="Name" htmlFor="bill-name">
-            <input
-              id="bill-name"
-              type="text"
-              required
-              maxLength={100}
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              className={inputClass}
+          <Input
+            label="Bill Name"
+            type="text"
+            required
+            maxLength={100}
+            placeholder="e.g. Netflix, Rent"
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+          />
+          <Input
+            label="Amount"
+            prefix="₹"
+            type="number"
+            step="0.01"
+            min="0.01"
+            max="999999999.99"
+            required
+            value={form.amount}
+            onChange={(e) => setForm({ ...form, amount: e.target.value })}
+          />
+          <Input
+            label="Category"
+            type="text"
+            placeholder="e.g. Streaming, Housing"
+            value={form.category}
+            onChange={(e) => setForm({ ...form, category: e.target.value })}
+          />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <StyledSelect
+              label="Frequency"
+              value={form.frequency}
+              onChange={(e) => setForm({ ...form, frequency: e.target.value })}
+              options={FREQUENCIES}
             />
-          </Field>
-          <Field label="Amount" htmlFor="bill-amount">
-            <input
-              id="bill-amount"
-              type="number"
-              step="0.01"
-              min="0.01"
-              max="999999999.99"
+            <Input
+              label="Next Due Date"
+              type="date"
               required
-              value={form.amount}
-              onChange={(e) => setForm({ ...form, amount: e.target.value })}
-              className={inputClass}
+              value={form.nextDueDate}
+              onChange={(e) => setForm({ ...form, nextDueDate: e.target.value })}
             />
-          </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Frequency" htmlFor="bill-frequency">
-              <select
-                id="bill-frequency"
-                value={form.frequency}
-                onChange={(e) => setForm({ ...form, frequency: e.target.value })}
-                className={inputClass}
-              >
-                {FREQUENCIES.map((f) => (
-                  <option key={f} value={f}>{f}</option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Next due date" htmlFor="bill-due">
-              <input
-                id="bill-due"
-                type="date"
-                required
-                value={form.nextDueDate}
-                onChange={(e) => setForm({ ...form, nextDueDate: e.target.value })}
-                className={inputClass}
-              />
-            </Field>
           </div>
-          <Field label="Category" htmlFor="bill-category">
-            <input
-              id="bill-category"
-              type="text"
-              value={form.category}
-              onChange={(e) => setForm({ ...form, category: e.target.value })}
-              className={inputClass}
-            />
-          </Field>
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={form.autoPay}
-              onChange={(e) => setForm({ ...form, autoPay: e.target.checked })}
-            />
-            <span>Auto-pay</span>
-          </label>
+          <Toggle
+            label="Auto Pay"
+            checked={form.autoPay}
+            onChange={(checked) => setForm({ ...form, autoPay: checked })}
+          />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 }}>
+            <Button variant="secondary" onClick={() => setModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" type="submit" loading={submitting}>
+              Save
+            </Button>
+          </div>
         </form>
       </Modal>
-    </section>
+    </div>
   );
 }
 
-/**
- * Mobile bill card: color indicator (left border), name, amount, due date,
- * days-remaining, and a full-width Pay button plus Edit/Delete. All actions
- * are at least 44px tall for comfortable touch.
- */
-function BillCard({ bill, format, onPay, onEdit, onDelete }) {
+/* ── Presentational helpers ────────────────────────────────────────────────*/
+
+function BillCard({ bill, status, isMobile, format, onPay, onEdit, onDelete }) {
+  const [hover, setHover] = useState(false);
+  const { Icon, color } = billVisual(bill.category, bill.name);
   const days = daysUntil(bill.nextDueDate);
-  const paid = Boolean(bill.isPaid);
-  const overdue = !paid && days < 0;
 
-  // Color indicator: emerald (paid), red (overdue), amber (due ≤7d), slate.
-  const accent = paid
-    ? 'border-l-emerald-500'
-    : overdue
-      ? 'border-l-red-500'
-      : days <= 7
-        ? 'border-l-amber-500'
-        : 'border-l-indigo-500';
+  const accent =
+    status === 'paid'
+      ? 'var(--green)'
+      : status === 'overdue'
+        ? 'var(--red)'
+        : days <= 3
+          ? 'var(--amber)'
+          : 'var(--accent)';
 
-  let statusText;
-  let statusClass;
-  if (paid) {
-    statusText = 'Paid';
-    statusClass = 'text-emerald-600';
-  } else if (days < 0) {
-    statusText = `${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'} overdue`;
-    statusClass = 'text-red-600';
-  } else if (days === 0) {
-    statusText = 'Due today';
-    statusClass = 'text-amber-600';
+  let dueText;
+  let dueColor;
+  if (status === 'paid') {
+    dueText = `Paid ${shortDate(bill.nextDueDate)}`;
+    dueColor = 'var(--green)';
+  } else if (status === 'overdue') {
+    dueText = `Was due ${shortDate(bill.nextDueDate)}`;
+    dueColor = 'var(--red)';
   } else {
-    statusText = `Due in ${days} day${days === 1 ? '' : 's'}`;
-    statusClass = days <= 7 ? 'text-amber-600' : 'text-slate-500';
+    dueText = `Due ${shortDate(bill.nextDueDate)}`;
+    dueColor = 'var(--text-muted)';
   }
 
-  const payDisabled = bill.frequency === 'one-time' && paid;
+  // Status badge + pay control (button text kept as "Pay" across statuses).
+  let badge = null;
+  if (status === 'paid') badge = <Badge variant="success">Paid</Badge>;
+  else if (status === 'overdue') badge = <Badge variant="danger">Overdue</Badge>;
+  else {
+    const label = days === 0 ? 'Today' : `${days} day${days === 1 ? '' : 's'}`;
+    badge = <Badge variant={days <= 7 ? 'warning' : 'default'}>{label}</Badge>;
+  }
+  const payVariant = status === 'upcoming' && days > 7 ? 'secondary' : 'primary';
+  const iconSize = isMobile ? 36 : 40;
 
   return (
-    <li className={`rounded-lg border border-l-4 border-slate-200 bg-white p-3 shadow-sm ${accent}`}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="truncate font-medium text-slate-900">{bill.name}</div>
-          <div className="truncate text-xs text-slate-500">
-            {bill.frequency}
-            {bill.category && ` · ${bill.category}`}
-          </div>
-        </div>
-        <div className="shrink-0 text-right text-base font-semibold text-slate-900 tabular-nums whitespace-nowrap">
-          {format(bill.amount)}
-        </div>
-      </div>
+    <div
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        position: 'relative',
+        overflow: 'hidden',
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius-lg)',
+        padding: isMobile ? '14px 16px' : '16px 20px',
+        paddingLeft: isMobile ? 18 : 22,
+        boxShadow: hover ? 'var(--shadow-md)' : 'var(--shadow-sm)',
+        transition: 'box-shadow 200ms var(--ease)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: isMobile ? 12 : 16,
+      }}
+    >
+      {/* Left accent */}
+      <span
+        aria-hidden="true"
+        style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: accent }}
+      />
 
-      <div className="mt-2 flex items-center justify-between text-xs">
-        <span className="text-slate-500">{formatDate(bill.nextDueDate)}</span>
-        <span className={`font-medium ${statusClass}`}>{statusText}</span>
-      </div>
-
-      <button
-        type="button"
-        onClick={onPay}
-        disabled={payDisabled}
-        className="mt-3 flex min-h-[44px] w-full items-center justify-center rounded-md bg-emerald-600 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+      {/* Category icon */}
+      <span
+        style={{
+          width: iconSize,
+          height: iconSize,
+          borderRadius: '50%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: `color-mix(in srgb, ${color} 12%, transparent)`,
+          color,
+          flexShrink: 0,
+        }}
       >
-        {paid ? 'Paid' : 'Pay'}
-      </button>
+        <Icon size={20} strokeWidth={1.75} />
+      </span>
 
-      <div className="mt-2 flex gap-2">
-        <button
-          type="button"
-          onClick={onEdit}
-          className="flex min-h-[44px] flex-1 items-center justify-center rounded-md border border-slate-300 text-sm font-medium text-indigo-600 hover:bg-slate-50"
+      {/* Middle */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            fontSize: 15,
+            fontWeight: 600,
+            color: 'var(--text-primary)',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
         >
-          Edit
-        </button>
-        <button
-          type="button"
-          onClick={onDelete}
-          className="flex min-h-[44px] flex-1 items-center justify-center rounded-md border border-slate-300 text-sm font-medium text-red-600 hover:bg-red-50"
-        >
-          Delete
-        </button>
+          {bill.name}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+          {bill.category && (
+            <span
+              style={{
+                fontSize: 12,
+                fontWeight: 500,
+                color,
+                background: `color-mix(in srgb, ${color} 12%, transparent)`,
+                borderRadius: 'var(--radius-full)',
+                padding: '2px 8px',
+              }}
+            >
+              {bill.category}
+            </span>
+          )}
+          <span style={{ fontSize: 12, color: dueColor }}>{dueText}</span>
+        </div>
       </div>
-    </li>
+
+      {/* Right */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8, flexShrink: 0 }}>
+        <span style={{ fontSize: isMobile ? 15 : 16, fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: 'var(--text-primary)' }}>
+          {format(bill.amount)}
+        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {badge}
+          {status !== 'paid' && (
+            <Button variant={payVariant} size="sm" onClick={onPay}>
+              Pay
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Edit / delete */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0 }}>
+        <IconBtn icon={Pencil} label="Edit" onClick={onEdit} />
+        <IconBtn icon={Trash2} label="Delete" danger onClick={onDelete} />
+      </div>
+    </div>
+  );
+}
+
+function SummaryChip({ label, value, color }) {
+  return (
+    <div
+      style={{
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius-lg)',
+        padding: 16,
+        boxShadow: 'var(--shadow-sm)',
+      }}
+    >
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 500,
+          textTransform: 'uppercase',
+          letterSpacing: '0.06em',
+          color: 'var(--text-muted)',
+        }}
+      >
+        {label}
+      </div>
+      <div style={{ fontSize: 22, fontWeight: 700, fontVariantNumeric: 'tabular-nums', color, marginTop: 4 }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function StyledSelect({ label, value, onChange, options }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)' }}>{label}</label>
+      <select
+        value={value}
+        onChange={onChange}
+        style={{
+          width: '100%',
+          background: 'var(--bg-elevated)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-md)',
+          padding: '11px 14px',
+          fontFamily: 'Poppins, system-ui, sans-serif',
+          fontSize: 14,
+          color: 'var(--text-primary)',
+          outline: 'none',
+          textTransform: 'capitalize',
+        }}
+      >
+        {options.map((o) => (
+          <option key={o} value={o}>
+            {o}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function IconBtn({ icon: Icon, onClick, danger, label }) {
+  const [hover, setHover] = useState(false);
+  const color = danger
+    ? hover
+      ? 'var(--red)'
+      : 'var(--text-muted)'
+    : hover
+      ? 'var(--text-primary)'
+      : 'var(--text-muted)';
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        width: 28,
+        height: 28,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: 'var(--radius-md)',
+        border: 'none',
+        cursor: 'pointer',
+        background: hover ? 'var(--bg-hover)' : 'transparent',
+        color,
+        flexShrink: 0,
+        transition: 'all 150ms var(--ease)',
+      }}
+    >
+      <Icon size={15} strokeWidth={1.75} />
+    </button>
+  );
+}
+
+function EmptyState({ onAdd }) {
+  return (
+    <div
+      style={{
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius-lg)',
+        boxShadow: 'var(--shadow-sm)',
+        padding: '60px 20px',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        textAlign: 'center',
+      }}
+    >
+      <Receipt size={48} strokeWidth={1.5} color="var(--text-muted)" />
+      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-secondary)', marginTop: 12 }}>
+        No bills added
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
+        Track recurring payments so nothing surprises you
+      </div>
+      <div style={{ marginTop: 16 }}>
+        <Button variant="primary" onClick={onAdd}>
+          <Plus size={16} strokeWidth={2} />
+          Add Your First Bill
+        </Button>
+      </div>
+    </div>
   );
 }
