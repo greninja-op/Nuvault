@@ -42,7 +42,7 @@ export default function Button({
     borderRadius: isIcon ? 'var(--radius-md)' : 'var(--radius-full)',
     minHeight: isIcon ? 'unset' : 44,
     transition: 'all 180ms var(--ease)',
-    display: isIcon ? 'flex' : fullWidth ? 'block' : 'inline-flex',
+    display: isIcon ? 'flex' : fullWidth ? 'flex' : 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
