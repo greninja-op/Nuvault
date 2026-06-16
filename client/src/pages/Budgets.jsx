@@ -1,12 +1,18 @@
 import { useEffect, useState } from 'react';
 import {
-  AlertCircle,
+  AlertTriangle,
+  Car,
   ChevronLeft,
   ChevronRight,
+  Heart,
+  Music,
   Pencil,
   PieChart as PieChartIcon,
   Plus,
+  ShoppingBag,
+  Tag,
   Trash2,
+  UtensilsCrossed,
 } from 'lucide-react';
 import apiClient from '../api/client';
 import { useDisplayCurrency } from '../currency/CurrencyContext';
@@ -17,7 +23,6 @@ import DonutChart from '../components/charts/DonutChart';
 import useWindowSize from '../hooks/useWindowSize';
 import Input from '../components/ui/Input';
 import Button from '../components/ui/Button';
-import Badge from '../components/ui/Badge';
 import Modal from '../components/ui/Modal';
 
 const MONTHS = [
@@ -30,6 +35,20 @@ const MONTH_FULL = [
 ];
 
 const EMPTY_FORM = { category: '', limit: '', month: 1, year: new Date().getFullYear() };
+
+/** Map a category to an icon + accent color. */
+function categoryVisual(category) {
+  const c = String(category || '').toLowerCase();
+  if (c.includes('food') || c.includes('grocery') || c.includes('groceries') || c.includes('restaurant'))
+    return { Icon: UtensilsCrossed, color: '#f59e0b' };
+  if (c.includes('transport') || c.includes('fuel') || c.includes('travel') || c.includes('car'))
+    return { Icon: Car, color: '#06b6d4' };
+  if (c.includes('shop') || c.includes('cloth')) return { Icon: ShoppingBag, color: '#a78bfa' };
+  if (c.includes('health') || c.includes('medical')) return { Icon: Heart, color: '#ef4444' };
+  if (c.includes('entertain') || c.includes('music') || c.includes('movie'))
+    return { Icon: Music, color: '#f59e0b' };
+  return { Icon: Tag, color: '#a1a1aa' };
+}
 
 /**
  * Budgets list with month/year navigation and create/edit/delete via a modal.
@@ -57,6 +76,9 @@ export default function Budgets() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [formError, setFormError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -133,7 +155,6 @@ export default function Budgets() {
         await apiClient.post('/budgets', payload);
       }
       setModalOpen(false);
-      // If the saved budget belongs to a different period, jump there.
       if (form.month !== month || form.year !== year) {
         setMonth(form.month);
         setYear(form.year);
@@ -147,15 +168,17 @@ export default function Budgets() {
     }
   }
 
-  async function handleDelete(budget) {
-    if (typeof window !== 'undefined' && !window.confirm(`Delete budget for ${budget.category}?`)) {
-      return;
-    }
+  async function confirmDelete() {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
     try {
-      await apiClient.delete(`/budgets/${budget._id}`);
+      await apiClient.delete(`/budgets/${deleteTarget._id}`);
+      setDeleteTarget(null);
       await load();
     } catch (err) {
       setError(extractError(err, 'Unable to delete budget'));
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -180,9 +203,6 @@ export default function Budgets() {
   const totalSpent = items.reduce((s, b) => s + (Number(b.spent) || 0), 0);
   const remaining = totalBudget - totalSpent;
 
-  // Donut data: only categories with spend. Rendered only when ≥2 categories
-  // have spending (a single-slice donut is meaningless and would duplicate the
-  // lone category label that already appears on its card).
   const spendData = items
     .filter((b) => Number(b.spent) > 0)
     .map((b) => ({ name: b.category, value: Number(b.spent), amount: Number(b.spent) }));
@@ -201,14 +221,15 @@ export default function Budgets() {
           alignItems: 'center',
           gap: 12,
           marginBottom: 24,
+          flexWrap: 'wrap',
         }}
       >
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.3px' }}>
             Budget
           </h1>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
-            Track your spending limits
+          <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 4 }}>
+            Set limits, track spending, stay on course.
           </p>
         </div>
         <Button variant="primary" onClick={openCreate}>
@@ -218,25 +239,9 @@ export default function Budgets() {
       </div>
 
       {/* Month navigator */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 16,
-          marginBottom: 24,
-        }}
-      >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, marginBottom: 24 }}>
         <IconBtn icon={ChevronLeft} label="Previous month" onClick={prevMonth} size={36} />
-        <span
-          style={{
-            fontSize: 15,
-            fontWeight: 600,
-            color: 'var(--text-primary)',
-            minWidth: 120,
-            textAlign: 'center',
-          }}
-        >
+        <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', minWidth: 120, textAlign: 'center' }}>
           {MONTH_FULL[month - 1]} {year}
         </span>
         <IconBtn icon={ChevronRight} label="Next month" onClick={nextMonth} size={36} />
@@ -263,21 +268,10 @@ export default function Budgets() {
       ) : (
         <>
           {/* Summary strip */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr)',
-              gap: 12,
-              marginBottom: 24,
-            }}
-          >
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 24 }}>
             <SummaryChip label="Total Budget" value={format(totalBudget)} color="var(--text-primary)" />
             <SummaryChip label="Total Spent" value={format(totalSpent)} color="var(--red)" />
-            <SummaryChip
-              label="Remaining"
-              value={format(remaining)}
-              color={remaining > 0 ? 'var(--green)' : 'var(--red)'}
-            />
+            <SummaryChip label="Remaining" value={format(remaining)} color={remaining > 0 ? 'var(--green)' : 'var(--red)'} />
           </div>
 
           {/* Spending donut */}
@@ -293,12 +287,10 @@ export default function Budgets() {
               }}
             >
               <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)' }}>
+                <div className="text-subhead" style={{ color: 'var(--text-primary)' }}>
                   Spending Breakdown
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                  {MONTH_FULL[month - 1]} {year}
-                </div>
+                <div className="text-caption">This month</div>
               </div>
               <DonutChart
                 data={spendData}
@@ -311,20 +303,14 @@ export default function Budgets() {
           )}
 
           {/* Budget cards grid */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: `repeat(${columns}, 1fr)`,
-              gap: 16,
-            }}
-          >
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${columns}, 1fr)`, gap: 16 }}>
             {items.map((budget) => (
               <BudgetCard
                 key={budget._id}
                 budget={budget}
                 format={format}
                 onEdit={() => openEdit(budget)}
-                onDelete={() => handleDelete(budget)}
+                onDelete={() => setDeleteTarget(budget)}
               />
             ))}
           </div>
@@ -332,11 +318,7 @@ export default function Budgets() {
       )}
 
       {/* Add / Edit modal */}
-      <Modal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        title={editing ? 'Edit Budget' : 'Add Budget'}
-      >
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Edit Budget' : 'Add Budget'}>
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {formError && (
             <p
@@ -372,15 +354,34 @@ export default function Budgets() {
             value={form.limit}
             onChange={(e) => setForm({ ...form, limit: e.target.value })}
           />
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 }}>
-            <Button variant="secondary" onClick={() => setModalOpen(false)}>
+          <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+            <Button variant="ghost" fullWidth onClick={() => setModalOpen(false)}>
               Cancel
             </Button>
-            <Button variant="primary" type="submit" loading={submitting}>
+            <Button variant="primary" fullWidth type="submit" loading={submitting}>
               Save
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Delete confirmation */}
+      <Modal open={Boolean(deleteTarget)} onClose={() => setDeleteTarget(null)} title="" maxWidth={360}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 6 }}>
+          <AlertTriangle size={40} strokeWidth={1.75} color="var(--red)" />
+          <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginTop: 6 }}>
+            Delete this budget?
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>This action cannot be undone.</div>
+          <div style={{ display: 'flex', gap: 10, marginTop: 16, width: '100%' }}>
+            <Button variant="secondary" fullWidth onClick={() => setDeleteTarget(null)}>
+              Cancel
+            </Button>
+            <Button variant="danger" fullWidth loading={deleting} onClick={confirmDelete}>
+              Delete
+            </Button>
+          </div>
+        </div>
       </Modal>
     </div>
   );
@@ -389,72 +390,72 @@ export default function Budgets() {
 /* ── Presentational helpers ────────────────────────────────────────────────*/
 
 function BudgetCard({ budget, format, onEdit, onDelete }) {
-  const [hover, setHover] = useState(false);
   const limit = Number(budget.limit) || 0;
   const spent = Number(budget.spent) || 0;
   const ratio = limit > 0 ? spent / limit : 0;
   const pct = Math.round(ratio * 100);
   const over = budget.overBudget || spent > limit;
+  const { Icon, color } = categoryVisual(budget.category);
 
-  const spentColor = ratio > 1 ? 'var(--red)' : ratio >= 0.8 ? 'var(--amber)' : 'var(--text-primary)';
-  const fillColor = ratio >= 1 ? 'var(--red)' : ratio >= 0.8 ? 'var(--amber)' : 'var(--accent)';
-  const badgeVariant = ratio >= 1 ? 'danger' : ratio >= 0.8 ? 'warning' : 'accent';
-
-  const baseShadow = hover ? 'var(--shadow-md)' : 'var(--shadow-sm)';
-  const boxShadow = over ? `inset 4px 0 0 var(--red), ${baseShadow}` : baseShadow;
+  const fillColor = ratio > 0.9 ? 'var(--red)' : ratio >= 0.7 ? 'var(--amber)' : 'var(--green)';
 
   return (
     <div
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
       style={{
         background: 'var(--bg-surface)',
-        border: '1px solid var(--border)',
+        border: `1px solid ${over ? 'var(--red-muted)' : 'var(--border)'}`,
         borderRadius: 'var(--radius-lg)',
         padding: 20,
-        boxShadow,
-        transition: 'box-shadow 200ms var(--ease)',
+        boxShadow: 'var(--shadow-sm)',
       }}
     >
       {/* Top row */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 16,
-          gap: 8,
-        }}
-      >
-        <span
-          style={{
-            fontSize: 15,
-            fontWeight: 600,
-            color: 'var(--text-primary)',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {budget.category}
-        </span>
-        <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-          <IconBtn icon={Pencil} label="Edit" onClick={onEdit} />
-          <IconBtn icon={Trash2} label="Delete" danger onClick={onDelete} />
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+          <span
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: '50%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: `color-mix(in srgb, ${color} 12%, transparent)`,
+              color,
+              flexShrink: 0,
+            }}
+          >
+            <Icon size={16} strokeWidth={1.75} />
+          </span>
+          <span
+            style={{
+              fontSize: 14,
+              fontWeight: 600,
+              color: 'var(--text-primary)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {budget.category}
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+          <IconBtn icon={Pencil} label="Edit" onClick={onEdit} size={28} />
+          <IconBtn icon={Trash2} label="Delete" danger onClick={onDelete} size={28} />
         </div>
       </div>
 
       {/* Amount row */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'baseline',
-          marginBottom: 10,
-          gap: 8,
-        }}
-      >
-        <span style={{ fontSize: 22, fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: spentColor }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', margin: '12px 0 8px', gap: 8 }}>
+        <span
+          style={{
+            fontSize: 20,
+            fontWeight: 700,
+            fontVariantNumeric: 'tabular-nums',
+            color: over ? 'var(--red)' : 'var(--text-primary)',
+          }}
+        >
           {format(spent)}
         </span>
         <span style={{ fontSize: 13, fontWeight: 400, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
@@ -463,59 +464,31 @@ function BudgetCard({ budget, format, onEdit, onDelete }) {
       </div>
 
       {/* Progress bar */}
-      <div
-        style={{
-          height: 8,
-          borderRadius: 'var(--radius-full)',
-          background: 'var(--bg-elevated)',
-          overflow: 'hidden',
-          marginBottom: 12,
-        }}
-      >
+      <div style={{ height: 8, borderRadius: 'var(--radius-full)', background: 'var(--bg-elevated)', overflow: 'hidden' }}>
         <div
           style={{
             height: '100%',
             width: `${Math.min(pct, 100)}%`,
             background: fillColor,
             borderRadius: 'var(--radius-full)',
-            transition: 'width 700ms var(--ease)',
+            transition: 'width 400ms var(--ease)',
           }}
         />
       </div>
 
       {/* Bottom row */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginTop: 10 }}>
+        <span style={{ fontSize: 12, fontWeight: 500, color: fillColor }}>{pct}% used</span>
         {over ? (
           <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--red)' }}>
-            {format(spent - limit)} over budget
+            {format(spent - limit)} over
           </span>
         ) : (
-          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+          <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
             {format(Math.max(limit - spent, 0))} left
           </span>
         )}
-        <Badge variant={badgeVariant}>{pct}%</Badge>
       </div>
-
-      {/* Over-budget warning */}
-      {over && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            marginTop: 8,
-            paddingTop: 8,
-            borderTop: '1px solid var(--red-muted)',
-            fontSize: 12,
-            fontWeight: 500,
-            color: 'var(--red)',
-          }}
-        >
-          <AlertCircle size={14} strokeWidth={2} />
-          Over budget by {format(spent - limit)}
-        </div>
-      )}
     </div>
   );
 }
@@ -542,15 +515,7 @@ function SummaryChip({ label, value, color }) {
       >
         {label}
       </div>
-      <div
-        style={{
-          fontSize: 22,
-          fontWeight: 700,
-          fontVariantNumeric: 'tabular-nums',
-          color,
-          marginTop: 4,
-        }}
-      >
+      <div style={{ fontSize: 22, fontWeight: 700, fontVariantNumeric: 'tabular-nums', color, marginTop: 4 }}>
         {value}
       </div>
     </div>
@@ -609,11 +574,11 @@ function EmptyState({ onAdd }) {
       }}
     >
       <PieChartIcon size={48} strokeWidth={1.5} color="var(--text-muted)" />
-      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-secondary)', marginTop: 12 }}>
+      <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginTop: 12 }}>
         No budgets set
       </div>
-      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
-        Set spending limits to track where your money goes
+      <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 6 }}>
+        Create your first budget to start tracking spending limits.
       </div>
       <div style={{ marginTop: 16 }}>
         <Button variant="primary" onClick={onAdd}>
