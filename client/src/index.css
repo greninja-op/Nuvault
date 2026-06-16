@@ -293,3 +293,22 @@ body {
     grid-template-columns: 55fr 45fr;
   }
 }
+
+/* ── AI Advisor chat shell + typing indicator ──────────────────────────────
+ * Preserves the page's responsive full-height behaviour (tighter on mobile to
+ * clear the bottom nav, taller from md up) that the inline layout can't express.
+ */
+.ai-advisor-shell {
+  height: calc(100dvh - 11rem);
+}
+@media (min-width: 768px) {
+  .ai-advisor-shell {
+    height: calc(100dvh - 3.5rem);
+  }
+}
+.ai-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}

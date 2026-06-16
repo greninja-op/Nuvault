@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Send, Sparkles, Trash2 } from 'lucide-react';
 import apiClient from '../api/client';
 import { extractError } from '../lib/format';
 import { sanitizeInput } from '../utils/sanitize';
@@ -127,69 +128,161 @@ export default function AiChat() {
   if (initialLoading) return <AiAdvisorSkeleton />;
 
   return (
-    <section className="flex h-[calc(100dvh-11rem)] flex-col md:h-[calc(100dvh-3.5rem)]">
-      <header className="flex shrink-0 items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">AI advisor</h1>
-          <p className="text-sm text-slate-600">
-            Personalised advice based on your real Nuvault finances.
-          </p>
+    <section
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        maxWidth: 900,
+        margin: '0 auto',
+      }}
+      className="ai-advisor-shell"
+    >
+      {/* Header — visually distinct band above the chat */}
+      <header
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          gap: 12,
+          flexShrink: 0,
+          paddingBottom: 16,
+          borderBottom: '1px solid var(--border)',
+          marginBottom: 16,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+          <span
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 'var(--radius-lg)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'color-mix(in srgb, var(--accent) 14%, transparent)',
+              color: 'var(--accent)',
+              flexShrink: 0,
+            }}
+          >
+            <Sparkles size={20} strokeWidth={1.75} />
+          </span>
+          <div style={{ minWidth: 0 }}>
+            <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.3px' }}>
+              AI Advisor
+            </h1>
+            <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 2 }}>
+              Ask anything about your finances
+            </p>
+          </div>
         </div>
         <button
           type="button"
           onClick={handleClear}
           disabled={clearing || submitting || history.length === 0}
-          className="flex min-h-[40px] shrink-0 items-center rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            flexShrink: 0,
+            height: 38,
+            padding: '0 14px',
+            borderRadius: 'var(--radius-md)',
+            border: '1px solid var(--border)',
+            background: 'var(--bg-surface)',
+            color: 'var(--text-secondary)',
+            fontFamily: 'Poppins, system-ui, sans-serif',
+            fontSize: 13,
+            fontWeight: 500,
+            cursor: clearing || submitting || history.length === 0 ? 'not-allowed' : 'pointer',
+            opacity: clearing || submitting || history.length === 0 ? 0.4 : 1,
+            transition: 'all 150ms var(--ease)',
+          }}
         >
+          <Trash2 size={15} strokeWidth={1.75} />
           {clearing ? 'Clearing…' : 'Clear chat'}
         </button>
       </header>
 
       {/* Quick prompts — single horizontally scrollable row */}
-      <div className="mt-3 flex shrink-0 gap-2 overflow-x-auto pb-1">
+      <div
+        className="no-scrollbar"
+        style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, flexShrink: 0, marginBottom: 12 }}
+      >
         {QUICK_PROMPTS.map((prompt) => (
-          <button
-            key={prompt}
-            type="button"
-            onClick={() => send(prompt)}
-            disabled={submitting}
-            className="flex min-h-[40px] shrink-0 items-center whitespace-nowrap rounded-full border border-slate-300 bg-white px-3 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-          >
+          <PromptChip key={prompt} disabled={submitting} onClick={() => send(prompt)}>
             {prompt}
-          </button>
+          </PromptChip>
         ))}
       </div>
 
       {/* Message area — fills the remaining height and scrolls */}
       <div
         ref={scrollRef}
-        className="mt-3 flex-1 overflow-y-auto rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          background: 'var(--bg-base)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-lg)',
+          padding: 16,
+        }}
       >
         {history.length === 0 ? (
-          <p className="text-sm text-slate-500">
-            Tap a prompt above or type your own question to get started.
-          </p>
+          <div
+            style={{
+              height: '100%',
+              minHeight: 200,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              textAlign: 'center',
+              padding: '40px 20px',
+            }}
+          >
+            <Sparkles size={48} strokeWidth={1.5} color="var(--text-muted)" />
+            <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginTop: 12 }}>
+              Your finances, explained
+            </div>
+            <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 6, maxWidth: 360 }}>
+              Tap a prompt above or type your own question to get personalised advice based on your real Nuvault data.
+            </div>
+          </div>
         ) : (
-          <ul className="space-y-3">
+          <ul style={{ display: 'flex', flexDirection: 'column', gap: 12, listStyle: 'none', margin: 0, padding: 0 }}>
             {history.map((entry, idx) => {
               const hasCharts = Array.isArray(entry.charts) && entry.charts.length > 0;
+              const isUser = entry.role === 'user';
               return (
                 <li
                   key={idx}
-                  className={
-                    entry.role === 'user' ? 'flex justify-end' : 'flex justify-start'
-                  }
+                  style={{ display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start' }}
                 >
                   <div
-                    className={[
-                      'rounded-lg px-3 py-2 text-sm whitespace-pre-wrap break-words',
-                      hasCharts ? 'w-full max-w-[95%]' : 'max-w-[85%]',
-                      entry.role === 'user'
-                        ? 'bg-indigo-600 text-white'
+                    style={{
+                      maxWidth: hasCharts ? '95%' : '85%',
+                      width: hasCharts ? '100%' : undefined,
+                      borderRadius: 'var(--radius-lg)',
+                      padding: '10px 14px',
+                      fontSize: 14,
+                      lineHeight: 1.5,
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word',
+                      ...(isUser
+                        ? { background: 'var(--accent)', color: '#fff' }
                         : entry.isError
-                          ? 'bg-red-50 text-red-700'
-                          : 'bg-slate-100 text-slate-900',
-                    ].join(' ')}
+                          ? {
+                              background: 'var(--red-muted)',
+                              color: 'var(--red)',
+                              border: '1px solid color-mix(in srgb, var(--red) 30%, transparent)',
+                            }
+                          : {
+                              background: 'var(--bg-surface)',
+                              color: 'var(--text-primary)',
+                              border: '1px solid var(--border)',
+                              boxShadow: 'var(--shadow-sm)',
+                            }),
+                    }}
                   >
                     {entry.content}
                     {hasCharts && <ChatCharts charts={entry.charts} />}
@@ -198,11 +291,22 @@ export default function AiChat() {
               );
             })}
             {submitting && (
-              <li className="flex justify-start">
-                <div className="flex items-center gap-1 rounded-lg bg-slate-100 px-3 py-3">
-                  <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.3s]" />
-                  <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.15s]" />
-                  <span className="h-2 w-2 animate-bounce rounded-full bg-slate-400" />
+              <li style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    background: 'var(--bg-surface)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-lg)',
+                    padding: '12px 14px',
+                    boxShadow: 'var(--shadow-sm)',
+                  }}
+                >
+                  <span className="ai-dot animate-bounce [animation-delay:-0.3s]" />
+                  <span className="ai-dot animate-bounce [animation-delay:-0.15s]" />
+                  <span className="ai-dot animate-bounce" />
                 </div>
               </li>
             )}
@@ -211,29 +315,106 @@ export default function AiChat() {
       </div>
 
       {error && (
-        <p role="alert" className="mt-2 shrink-0 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p
+          role="alert"
+          style={{
+            flexShrink: 0,
+            marginTop: 8,
+            background: 'var(--red-muted)',
+            color: 'var(--red)',
+            borderRadius: 'var(--radius-md)',
+            padding: '8px 12px',
+            fontSize: 13,
+          }}
+        >
           {error}
         </p>
       )}
 
       {/* Input row — pinned at the bottom of the column */}
-      <form onSubmit={handleSubmit} className="mt-3 flex shrink-0 gap-2">
+      <form onSubmit={handleSubmit} style={{ display: 'flex', gap: 8, flexShrink: 0, marginTop: 12 }}>
         <input
           type="text"
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           placeholder="Ask the advisor a question…"
           maxLength={4000}
-          className="min-h-[44px] flex-1 rounded-md border border-slate-300 bg-white px-3 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          style={{
+            flex: 1,
+            height: 48,
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-full)',
+            padding: '0 20px',
+            fontFamily: 'Poppins, system-ui, sans-serif',
+            fontSize: 14,
+            color: 'var(--text-primary)',
+            outline: 'none',
+            boxShadow: 'var(--shadow-sm)',
+          }}
         />
         <button
           type="submit"
+          aria-label="Send"
           disabled={submitting || message.trim().length === 0}
-          className="flex min-h-[44px] items-center justify-center rounded-md bg-indigo-600 px-5 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:bg-indigo-400"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            height: 48,
+            padding: '0 22px',
+            borderRadius: 'var(--radius-full)',
+            border: 'none',
+            background: 'var(--accent)',
+            color: '#fff',
+            fontFamily: 'Poppins, system-ui, sans-serif',
+            fontSize: 14,
+            fontWeight: 600,
+            cursor: submitting || message.trim().length === 0 ? 'not-allowed' : 'pointer',
+            opacity: submitting || message.trim().length === 0 ? 0.5 : 1,
+            transition: 'opacity 150ms var(--ease)',
+          }}
         >
+          <Send size={16} strokeWidth={2} />
           Send
         </button>
       </form>
     </section>
+  );
+}
+
+/** Indigo-violet outline starter-prompt chip that fills on hover. */
+function PromptChip({ children, onClick, disabled }) {
+  const [hover, setHover] = useState(false);
+  const filled = hover && !disabled;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        flexShrink: 0,
+        whiteSpace: 'nowrap',
+        height: 36,
+        padding: '0 16px',
+        borderRadius: 'var(--radius-full)',
+        border: '1px solid var(--accent)',
+        background: filled ? 'var(--accent)' : 'transparent',
+        color: filled ? '#fff' : 'var(--accent)',
+        fontFamily: 'Poppins, system-ui, sans-serif',
+        fontSize: 13,
+        fontWeight: 500,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.5 : 1,
+        transition: 'all 150ms var(--ease)',
+      }}
+    >
+      {children}
+    </button>
   );
 }
