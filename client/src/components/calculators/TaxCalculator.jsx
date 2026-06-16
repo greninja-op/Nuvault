@@ -129,21 +129,23 @@ export default function TaxCalculator() {
                 : `The ${cheaper === 'old' ? 'Old' : 'New'} regime is cheaper for you.`}
             </p>
           </ResultCard>
-          <ResultCard title="Old vs new regime">
-            <SplitBar
-              data={[
-                { name: 'Old', Tax: oldTax },
-                { name: 'New', Tax: newTax },
-              ]}
-              bars={[{ dataKey: 'Tax', name: 'Tax payable' }]}
-            />
-            <p className="mt-3 text-xs text-slate-500">
-              This is a simplified estimate (incl. 4% cess and Section 87A
-              rebate) for FY 2023-24. It does not account for surcharge, HRA,
-              or other exemptions. Consult a tax professional for filing.
-            </p>
-          </ResultCard>
         </>
+      }
+      bottomChart={
+        <ResultCard title="Old vs new regime">
+          <SplitBar
+            data={[
+              { name: 'Old', Tax: oldTax },
+              { name: 'New', Tax: newTax },
+            ]}
+            bars={[{ dataKey: 'Tax', name: 'Tax payable' }]}
+          />
+          <p className="mt-3 text-xs text-slate-500">
+            This is a simplified estimate (incl. 4% cess and Section 87A
+            rebate) for FY 2023-24. It does not account for surcharge, HRA,
+            or other exemptions. Consult a tax professional for filing.
+          </p>
+        </ResultCard>
       }
     />
   );

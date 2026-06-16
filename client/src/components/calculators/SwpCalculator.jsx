@@ -102,22 +102,24 @@ export default function SwpCalculator() {
               </p>
             )}
           </ResultCard>
-          <ResultCard title="Withdrawn vs remaining">
-            <SplitBar
-              data={[
-                {
-                  name: 'Outcome',
-                  Withdrawn: totalWithdrawn,
-                  Balance: endingBalance,
-                },
-              ]}
-              bars={[
-                { dataKey: 'Withdrawn', name: 'Total withdrawn' },
-                { dataKey: 'Balance', name: 'Final balance' },
-              ]}
-            />
-          </ResultCard>
         </>
+      }
+      bottomChart={
+        <ResultCard title="Withdrawn vs remaining">
+          <SplitBar
+            data={[
+              {
+                name: 'Outcome',
+                Withdrawn: totalWithdrawn,
+                Balance: endingBalance,
+              },
+            ]}
+            bars={[
+              { dataKey: 'Withdrawn', name: 'Total withdrawn' },
+              { dataKey: 'Balance', name: 'Final balance' },
+            ]}
+          />
+        </ResultCard>
       }
     />
   );

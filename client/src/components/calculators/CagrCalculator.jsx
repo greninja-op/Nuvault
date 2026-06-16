@@ -76,22 +76,24 @@ export default function CagrCalculator() {
               tone={gain >= 0 ? 'positive' : 'negative'}
             />
           </ResultCard>
-          <ResultCard title="Initial vs final">
-            <SplitBar
-              data={[
-                {
-                  name: 'Value',
-                  Initial: Number(initial) || 0,
-                  Final: Number(final) || 0,
-                },
-              ]}
-              bars={[
-                { dataKey: 'Initial', name: 'Initial value' },
-                { dataKey: 'Final', name: 'Final value' },
-              ]}
-            />
-          </ResultCard>
         </>
+      }
+      bottomChart={
+        <ResultCard title="Initial vs final">
+          <SplitBar
+            data={[
+              {
+                name: 'Value',
+                Initial: Number(initial) || 0,
+                Final: Number(final) || 0,
+              },
+            ]}
+            bars={[
+              { dataKey: 'Initial', name: 'Initial value' },
+              { dataKey: 'Final', name: 'Final value' },
+            ]}
+          />
+        </ResultCard>
       }
     />
   );

@@ -70,15 +70,17 @@ export default function RdCalculator() {
             <ResultRow label="Interest earned" value={inr(interest)} tone="positive" />
             <ResultRow label="Maturity value" value={inr(maturity)} tone="accent" />
           </ResultCard>
-          <ResultCard title="Deposited vs interest">
-            <SplitPie
-              data={[
-                { name: 'Deposited', value: deposited },
-                { name: 'Interest', value: interest },
-              ]}
-            />
-          </ResultCard>
         </>
+      }
+      bottomChart={
+        <ResultCard title="Deposited vs interest">
+          <SplitPie
+            data={[
+              { name: 'Deposited', value: deposited },
+              { name: 'Interest', value: interest },
+            ]}
+          />
+        </ResultCard>
       }
     />
   );

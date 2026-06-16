@@ -74,24 +74,26 @@ export default function InflationCalculator() {
             />
             <ResultRow label="Value eroded" value={inr(erosion)} tone="negative" />
           </ResultCard>
-          <ResultCard title="Today vs future">
-            <SplitBar
-              data={[
-                {
-                  name: 'Value',
-                  Today: Number(present) || 0,
-                  FutureCost: futureValue,
-                  Power: purchasingPower,
-                },
-              ]}
-              bars={[
-                { dataKey: 'Today', name: 'Today' },
-                { dataKey: 'FutureCost', name: 'Future cost' },
-                { dataKey: 'Power', name: 'Future power' },
-              ]}
-            />
-          </ResultCard>
         </>
+      }
+      bottomChart={
+        <ResultCard title="Today vs future">
+          <SplitBar
+            data={[
+              {
+                name: 'Value',
+                Today: Number(present) || 0,
+                FutureCost: futureValue,
+                Power: purchasingPower,
+              },
+            ]}
+            bars={[
+              { dataKey: 'Today', name: 'Today' },
+              { dataKey: 'FutureCost', name: 'Future cost' },
+              { dataKey: 'Power', name: 'Future power' },
+            ]}
+          />
+        </ResultCard>
       }
     />
   );

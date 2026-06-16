@@ -62,15 +62,17 @@ export default function LumpsumCalculator() {
             <ResultRow label="Est. returns" value={inr(returns)} tone="positive" />
             <ResultRow label="Total value" value={inr(maturity)} tone="accent" />
           </ResultCard>
-          <ResultCard title="Invested vs returns">
-            <SplitPie
-              data={[
-                { name: 'Invested', value: invested },
-                { name: 'Returns', value: returns },
-              ]}
-            />
-          </ResultCard>
         </>
+      }
+      bottomChart={
+        <ResultCard title="Invested vs returns">
+          <SplitPie
+            data={[
+              { name: 'Invested', value: invested },
+              { name: 'Returns', value: returns },
+            ]}
+          />
+        </ResultCard>
       }
     />
   );

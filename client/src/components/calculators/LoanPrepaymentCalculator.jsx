@@ -125,22 +125,24 @@ export default function LoanPrepaymentCalculator() {
               tone="accent"
             />
           </ResultCard>
-          <ResultCard title="Interest comparison">
-            <SplitBar
-              data={[
-                {
-                  name: 'Interest',
-                  Without: result.interestWithout,
-                  With: result.interestWith,
-                },
-              ]}
-              bars={[
-                { dataKey: 'Without', name: 'Without prepayment' },
-                { dataKey: 'With', name: 'With prepayment' },
-              ]}
-            />
-          </ResultCard>
         </>
+      }
+      bottomChart={
+        <ResultCard title="Interest comparison">
+          <SplitBar
+            data={[
+              {
+                name: 'Interest',
+                Without: result.interestWithout,
+                With: result.interestWith,
+              },
+            ]}
+            bars={[
+              { dataKey: 'Without', name: 'Without prepayment' },
+              { dataKey: 'With', name: 'With prepayment' },
+            ]}
+          />
+        </ResultCard>
       }
     />
   );

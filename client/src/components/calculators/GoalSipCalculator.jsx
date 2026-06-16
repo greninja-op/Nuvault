@@ -80,15 +80,17 @@ export default function GoalSipCalculator() {
             <ResultRow label="Est. returns" value={inr(returns)} tone="positive" />
             <ResultRow label="Target value" value={inr(target)} />
           </ResultCard>
-          <ResultCard title="Invested vs returns">
-            <SplitPie
-              data={[
-                { name: 'Invested', value: invested },
-                { name: 'Returns', value: returns },
-              ]}
-            />
-          </ResultCard>
         </>
+      }
+      bottomChart={
+        <ResultCard title="Invested vs returns">
+          <SplitPie
+            data={[
+              { name: 'Invested', value: invested },
+              { name: 'Returns', value: returns },
+            ]}
+          />
+        </ResultCard>
       }
     />
   );

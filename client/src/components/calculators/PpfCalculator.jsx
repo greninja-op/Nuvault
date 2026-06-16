@@ -64,15 +64,17 @@ export default function PpfCalculator() {
             <ResultRow label="Interest earned" value={inr(interest)} tone="positive" />
             <ResultRow label="Maturity value" value={inr(maturity)} tone="accent" />
           </ResultCard>
-          <ResultCard title="Invested vs interest">
-            <SplitPie
-              data={[
-                { name: 'Invested', value: invested },
-                { name: 'Interest', value: interest },
-              ]}
-            />
-          </ResultCard>
         </>
+      }
+      bottomChart={
+        <ResultCard title="Invested vs interest">
+          <SplitPie
+            data={[
+              { name: 'Invested', value: invested },
+              { name: 'Interest', value: interest },
+            ]}
+          />
+        </ResultCard>
       }
     />
   );
