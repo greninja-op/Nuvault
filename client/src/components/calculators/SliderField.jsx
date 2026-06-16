@@ -52,8 +52,10 @@ export default function SliderField({
         }}
       >
         <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)' }}>{label}</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          {prefix && <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{prefix}</span>}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6, width: 146 }}>
+          <span style={{ width: 14, textAlign: 'right', fontSize: 13, color: 'var(--text-muted)', flexShrink: 0 }}>
+            {prefix || ''}
+          </span>
           <input
             type="number"
             value={value}
@@ -63,6 +65,7 @@ export default function SliderField({
             onChange={(e) => handle(e.target.value)}
             style={{
               width: 96,
+              flexShrink: 0,
               textAlign: 'right',
               background: 'var(--bg-elevated)',
               border: '1px solid var(--border)',
@@ -77,7 +80,9 @@ export default function SliderField({
             }}
             aria-label={label}
           />
-          {suffix && <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{suffix}</span>}
+          <span style={{ width: 24, textAlign: 'left', fontSize: 13, color: 'var(--text-muted)', flexShrink: 0 }}>
+            {suffix || ''}
+          </span>
         </div>
       </div>
 
