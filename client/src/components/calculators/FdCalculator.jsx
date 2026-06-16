@@ -7,7 +7,6 @@ import {
   SplitPie,
   inr,
 } from './shared';
-import { inputClass } from '../Field';
 import AreaChartCard from '../charts/AreaChartCard';
 
 const COMPOUNDING = {
@@ -77,12 +76,32 @@ export default function FdCalculator() {
             step={1}
             suffix="yr"
           />
-          <div className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">Compounding</span>
+          <div style={{ marginBottom: 20 }}>
+            <span
+              style={{
+                display: 'block',
+                fontSize: 13,
+                fontWeight: 500,
+                color: 'var(--text-secondary)',
+                marginBottom: 6,
+              }}
+            >
+              Compounding
+            </span>
             <select
               value={freq}
               onChange={(e) => setFreq(e.target.value)}
-              className={inputClass}
+              style={{
+                width: '100%',
+                background: 'var(--bg-elevated)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-md)',
+                padding: '11px 14px',
+                fontFamily: 'Poppins, system-ui, sans-serif',
+                fontSize: 14,
+                color: 'var(--text-primary)',
+                outline: 'none',
+              }}
             >
               {Object.entries(COMPOUNDING).map(([key, { label }]) => (
                 <option key={key} value={key}>
