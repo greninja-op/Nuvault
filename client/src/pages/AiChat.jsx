@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Send, Sparkles, Trash2 } from 'lucide-react';
+import { Check, Copy, Send, Sparkles, Trash2 } from 'lucide-react';
 import apiClient from '../api/client';
 import { extractError } from '../lib/format';
 import { sanitizeInput } from '../utils/sanitize';
 import AiAdvisorSkeleton from '../components/skeletons/AiAdvisorSkeleton';
 import ChatCharts from '../components/ChatCharts';
+import Badge from '../components/ui/Badge';
 
 /**
  * AI advisor chat. Posts to `POST /ai/chat`, which replies using a rich
@@ -21,7 +22,24 @@ import ChatCharts from '../components/ChatCharts';
  * Quick-prompt chips scroll horizontally in a single no-wrap row.
  */
 
-/** Data-driven starter prompts shown above the input. */
+/**
+ * Readable name of the primary Gemini model. The backend rotates through
+ * `gemini-3-flash-preview` (primary) → 2.5-flash → 2.0-flash → 2.5-flash-lite
+ * for quota headroom; this badge reflects the primary, highest-quality model
+ * that carries virtually all traffic. Display-only — no behavioural impact.
+ */
+const AI_MODEL = 'Gemini 3 Flash';
+
+/**
+ * Starter prompts shown above the input.
+ *
+ * NOTE: These are static. Truly data-aware prompts (e.g. "How is my ₹X
+ * portfolio performing?") would need the user's financial figures, but this
+ * component never fetches that data — the snapshot is assembled entirely
+ * server-side inside POST /ai/chat and is never returned to the client. With
+ * no client-side financial state and a hard "no new API calls" constraint,
+ * every prompt resolves to its static fallback, so the set stays static.
+ */
 const QUICK_PROMPTS = [
   'Give me an investment plan for ₹5,000/month',
   'Give me an investment plan for ₹10,000/month',
@@ -30,6 +48,61 @@ const QUICK_PROMPTS = [
   'Where am I overspending?',
   'What bills are due soon?',
 ];
+
+/**
+ * Human-readable labels for each snapshot section the backend can include.
+ * Keys mirror the flags returned by the server's `detectQuestionScope`.
+ */
+const SCOPE_LABELS = {
+  monthly: 'Income & Expenses',
+  netWorth: 'Net Worth',
+  budgets: 'Budgets',
+  topCategories: 'Spending',
+  transactions: 'Transactions',
+  goals: 'Goals',
+  bills: 'Bills',
+  investments: 'Investments',
+};
+
+/**
+ * Mirror of the server's `detectQuestionScope` (aiController.js). The backend
+ * scopes the financial snapshot to the question's keywords, so the data
+ * categories used for a reply are deterministic from the user's message —
+ * which the client already has. This lets us tag each answer with its sources
+ * without any new API call or server change. Kept in sync with the server;
+ * if the backend scoping changes, update this too.
+ */
+function deriveDataSources(message) {
+  if (!message) return [];
+  const m = String(message).toLowerCase();
+  const has = (...words) => words.some((w) => m.includes(w));
+
+  let keys;
+  if (has('summary', 'overall', 'health', 'everything')) {
+    keys = ['monthly', 'netWorth', 'budgets', 'topCategories', 'transactions', 'goals', 'bills', 'investments'];
+  } else if (has('spend', 'budget', 'overspend', 'category')) {
+    keys = ['budgets', 'topCategories', 'transactions'];
+  } else if (has('goal', 'saving', 'target')) {
+    keys = ['goals', 'monthly'];
+  } else if (has('bill', 'due', 'pay', 'subscription')) {
+    keys = ['bills'];
+  } else if (has('invest', 'portfolio', 'stock', 'crypto', 'fund')) {
+    keys = ['investments'];
+  } else if (has('worth', 'asset', 'liabilit', 'debt', 'loan')) {
+    keys = ['netWorth'];
+  } else {
+    keys = ['monthly', 'netWorth', 'topCategories'];
+  }
+  return keys.map((k) => SCOPE_LABELS[k]).filter(Boolean);
+}
+
+/** The nearest preceding user message for an assistant entry at `idx`. */
+function precedingUserMessage(historyArr, idx) {
+  for (let i = idx - 1; i >= 0; i -= 1) {
+    if (historyArr[i].role === 'user') return historyArr[i].content;
+  }
+  return null;
+}
 
 /** Normalise a backend turn ('user' | 'model') into a render entry. */
 function toEntry(turn) {
@@ -167,9 +240,12 @@ export default function AiChat() {
             <Sparkles size={20} strokeWidth={1.75} />
           </span>
           <div style={{ minWidth: 0 }}>
-            <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.3px' }}>
-              AI Advisor
-            </h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.3px' }}>
+                AI Advisor
+              </h1>
+              <Badge variant="default">{AI_MODEL}</Badge>
+            </div>
             <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 2 }}>
               Ask anything about your finances
             </p>
@@ -253,10 +329,12 @@ export default function AiChat() {
             {history.map((entry, idx) => {
               const hasCharts = Array.isArray(entry.charts) && entry.charts.length > 0;
               const isUser = entry.role === 'user';
+              const isAssistant = !isUser && !entry.isError;
+              const sources = isAssistant ? deriveDataSources(precedingUserMessage(history, idx)) : [];
               return (
                 <li
                   key={idx}
-                  style={{ display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start' }}
+                  style={{ display: 'flex', flexDirection: 'column', alignItems: isUser ? 'flex-end' : 'flex-start' }}
                 >
                   <div
                     style={{
@@ -286,7 +364,17 @@ export default function AiChat() {
                   >
                     {entry.content}
                     {hasCharts && <ChatCharts charts={entry.charts} />}
+                    {isAssistant && (
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                        <CopyButton text={entry.content} />
+                      </div>
+                    )}
                   </div>
+                  {isAssistant && sources.length > 0 && (
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 5, paddingLeft: 4 }}>
+                      Based on: {sources.join(' · ')}
+                    </div>
+                  )}
                 </li>
               );
             })}
@@ -415,6 +503,57 @@ function PromptChip({ children, onClick, disabled }) {
       }}
     >
       {children}
+    </button>
+  );
+}
+
+/**
+ * Copy-to-clipboard button for AI replies. Copies the raw reply text exactly
+ * as stored (the model is instructed to emit plain text, so what's copied is
+ * the verbatim source — markdown syntax, if any, is preserved). Charts live in
+ * a separate `entry.charts` array and are never part of the text, so they're
+ * naturally excluded. Shows a Check icon for 1.5s on success.
+ */
+function CopyButton({ text }) {
+  const [copied, setCopied] = useState(false);
+  const [hover, setHover] = useState(false);
+  const timerRef = useRef(null);
+
+  useEffect(() => () => clearTimeout(timerRef.current), []);
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(text ?? '');
+      setCopied(true);
+      clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard unavailable — silently no-op */
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      aria-label={copied ? 'Copied' : 'Copy message'}
+      onClick={handleCopy}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: 28,
+        height: 28,
+        borderRadius: 'var(--radius-md)',
+        border: 'none',
+        cursor: 'pointer',
+        background: hover ? 'var(--bg-hover)' : 'transparent',
+        color: copied ? 'var(--green)' : 'var(--text-muted)',
+        transition: 'all 150ms var(--ease)',
+      }}
+    >
+      {copied ? <Check size={15} strokeWidth={2} /> : <Copy size={15} strokeWidth={1.75} />}
     </button>
   );
 }
