@@ -127,18 +127,20 @@ export default function FdCalculator() {
               ]}
             />
           </ResultCard>
-          {projection.length >= 2 && (
-            <ResultCard title="Maturity growth">
-              <AreaChartCard
-                data={projection}
-                dataKey="value"
-                xKey="label"
-                height={220}
-                card={false}
-              />
-            </ResultCard>
-          )}
         </>
+      }
+      bottomChart={
+        projection.length >= 2 ? (
+          <ResultCard title="Maturity growth">
+            <AreaChartCard
+              data={projection}
+              dataKey="value"
+              xKey="label"
+              height={220}
+              card={false}
+            />
+          </ResultCard>
+        ) : null
       }
     />
   );

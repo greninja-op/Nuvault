@@ -108,19 +108,21 @@ export default function EmiCalculator() {
               ]}
             />
           </ResultCard>
-          {projection.length >= 2 && (
-            <ResultCard title="Outstanding balance">
-              <AreaChartCard
-                data={projection}
-                dataKey="value"
-                xKey="label"
-                height={220}
-                color="#ef4444"
-                card={false}
-              />
-            </ResultCard>
-          )}
         </>
+      }
+      bottomChart={
+        projection.length >= 2 ? (
+          <ResultCard title="Outstanding balance">
+            <AreaChartCard
+              data={projection}
+              dataKey="value"
+              xKey="label"
+              height={220}
+              color="#ef4444"
+              card={false}
+            />
+          </ResultCard>
+        ) : null
       }
     />
   );

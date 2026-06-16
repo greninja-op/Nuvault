@@ -61,8 +61,14 @@ function useIsDesktop() {
  *
  * The whole calculator (inputs + results) sits inside one surface Card. On
  * desktop the columns split ~55/45 (controls / results); on mobile they stack
- * with inputs first, then the result blocks. */
-export function CalculatorLayout({ controls, results }) {
+ * with inputs first, then the result blocks.
+ *
+ * `bottomChart` (optional): a chart card that renders BELOW the controls in
+ * the left column on desktop — used to balance column heights when the right
+ * column carries more than one chart. On mobile it flows after the results so
+ * the reading order (sliders → summary → chart) is preserved. When a
+ * calculator has no bottom chart, nothing is rendered in that slot. */
+export function CalculatorLayout({ controls, results, bottomChart }) {
   return (
     <div
       style={{
@@ -74,8 +80,11 @@ export function CalculatorLayout({ controls, results }) {
       }}
     >
       <div className="calc-grid">
-        <div>{controls}</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>{results}</div>
+        <div className="calc-controls">{controls}</div>
+        <div className="calc-results" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {results}
+        </div>
+        {bottomChart ? <div className="calc-bottom">{bottomChart}</div> : null}
       </div>
     </div>
   );

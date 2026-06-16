@@ -282,7 +282,12 @@ body {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
-/* ── Calculator two-column layout (controls 55% / results 45%) ─────────────*/
+/* ── Calculator two-column layout (controls 55% / results 45%) ─────────────
+ * On mobile the three slots flow in source order (controls → results →
+ * bottom chart). On desktop the controls and the optional bottom chart stack
+ * in the left column while the results occupy the right column, so the two
+ * columns reach roughly equal height instead of leaving a left-side gap.
+ */
 .calc-grid {
   display: grid;
   grid-template-columns: 1fr;
@@ -291,6 +296,19 @@ body {
 @media (min-width: 768px) {
   .calc-grid {
     grid-template-columns: 55fr 45fr;
+    align-items: start;
+  }
+  .calc-grid .calc-controls {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .calc-grid .calc-results {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+  .calc-grid .calc-bottom {
+    grid-column: 1;
+    grid-row: 2;
   }
 }
 

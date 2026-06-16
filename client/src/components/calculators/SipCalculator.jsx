@@ -94,18 +94,20 @@ export default function SipCalculator() {
               ]}
             />
           </ResultCard>
-          {projection.length >= 2 && (
-            <ResultCard title="Projected growth">
-              <AreaChartCard
-                data={projection}
-                dataKey="value"
-                xKey="label"
-                height={220}
-                card={false}
-              />
-            </ResultCard>
-          )}
         </>
+      }
+      bottomChart={
+        projection.length >= 2 ? (
+          <ResultCard title="Projected growth">
+            <AreaChartCard
+              data={projection}
+              dataKey="value"
+              xKey="label"
+              height={220}
+              card={false}
+            />
+          </ResultCard>
+        ) : null
       }
     />
   );
