@@ -57,32 +57,55 @@ function useIsDesktop() {
   return isDesktop;
 }
 
-/** Two-column responsive shell: controls on the left, results on the right. */
+/** Two-column responsive shell: controls on the left, results on the right.
+ *
+ * The whole calculator (inputs + results) sits inside one surface Card. On
+ * desktop the columns split ~55/45 (controls / results); on mobile they stack
+ * with inputs first, then the result blocks. */
 export function CalculatorLayout({ controls, results }) {
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
-      <div className="space-y-5 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        {controls}
+    <div
+      style={{
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius-lg)',
+        boxShadow: 'var(--shadow-sm)',
+        padding: 24,
+      }}
+    >
+      <div className="calc-grid">
+        <div>{controls}</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>{results}</div>
       </div>
-      <div className="space-y-5">{results}</div>
     </div>
   );
 }
 
 /** A single labeled result row. */
 export function ResultRow({ label, value, tone = 'neutral' }) {
-  const toneClass =
+  const color =
     tone === 'positive'
-      ? 'text-emerald-600'
+      ? 'var(--green)'
       : tone === 'negative'
-        ? 'text-red-600'
+        ? 'var(--red)'
         : tone === 'accent'
-          ? 'text-indigo-600'
-          : 'text-slate-900';
+          ? 'var(--accent)'
+          : 'var(--text-primary)';
   return (
-    <div className="flex items-center justify-between border-b border-slate-100 py-2 last:border-0">
-      <span className="text-sm text-slate-600">{label}</span>
-      <span className={`text-sm font-semibold ${toneClass}`}>{value}</span>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 12,
+        padding: '9px 0',
+        borderBottom: '1px solid var(--border-subtle)',
+      }}
+    >
+      <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{label}</span>
+      <span style={{ fontSize: 14, fontWeight: 600, fontVariantNumeric: 'tabular-nums', color }}>
+        {value}
+      </span>
     </div>
   );
 }
@@ -92,11 +115,34 @@ export function ResultRow({ label, value, tone = 'neutral' }) {
  * When the card contains a chart (a child marked with the `chart` class via
  * {@link SplitPie}/{@link SplitBar}), the whole card is hidden on small
  * screens and shown from `md` up — per the mobile spec, charts appear only
- * on tablet and above. Cards without a chart are unaffected. */
+ * on tablet and above. Cards without a chart are unaffected.
+ *
+ * The Tailwind `has-[.chart]:hidden md:has-[.chart]:block` classes drive that
+ * responsive gating; the visual surface is the design-system elevated card. */
 export function ResultCard({ title, children }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm has-[.chart]:hidden md:has-[.chart]:block">
-      {title && <h3 className="mb-2 text-sm font-semibold text-slate-900">{title}</h3>}
+    <div
+      className="has-[.chart]:hidden md:has-[.chart]:block"
+      style={{
+        background: 'var(--bg-elevated)',
+        borderRadius: 'var(--radius-lg)',
+        padding: 20,
+      }}
+    >
+      {title && (
+        <h3
+          style={{
+            fontSize: 12,
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+            color: 'var(--text-muted)',
+            marginBottom: 10,
+          }}
+        >
+          {title}
+        </h3>
+      )}
       {children}
     </div>
   );

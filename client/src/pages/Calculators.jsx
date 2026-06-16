@@ -38,58 +38,68 @@ export default function Calculators() {
     TABS.find((t) => t.id === active)?.Component ?? SipCalculator;
 
   return (
-    <section className="space-y-6">
-      <header>
-        <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Finance Calculators</h1>
-        <p className="text-sm text-slate-600">
-          Plan investments, loans, and taxes with quick, interactive estimates.
+    <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.3px' }}>
+          Finance Calculators
+        </h1>
+        <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 4 }}>
+          Run the numbers before you commit.
         </p>
-      </header>
-
-      {/* Mobile: dropdown selector */}
-      <div className="md:hidden">
-        <label htmlFor="calc-select" className="sr-only">
-          Choose a calculator
-        </label>
-        <select
-          id="calc-select"
-          value={active}
-          onChange={(e) => setActive(e.target.value)}
-          className="block min-h-[44px] w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-        >
-          {TABS.map((tab) => (
-            <option key={tab.id} value={tab.id}>
-              {tab.label}
-            </option>
-          ))}
-        </select>
       </div>
 
-      {/* Tablet+: button tabs */}
-      <nav className="hidden flex-wrap gap-2 md:flex" aria-label="Calculator tabs">
-        {TABS.map((tab) => {
-          const isActive = tab.id === active;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActive(tab.id)}
-              aria-current={isActive ? 'page' : undefined}
-              className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                isActive
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
+      {/* Tab bar — wraps on desktop, horizontal scroll on mobile */}
+      <nav
+        className="no-scrollbar"
+        aria-label="Calculator tabs"
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 8,
+          overflowX: 'auto',
+          paddingBottom: 4,
+          marginBottom: 24,
+        }}
+      >
+        {TABS.map((tab) => (
+          <TabPill key={tab.id} active={tab.id === active} onClick={() => setActive(tab.id)}>
+            {tab.label}
+          </TabPill>
+        ))}
       </nav>
 
       <div>
         <ActiveComponent />
       </div>
-    </section>
+    </div>
+  );
+}
+
+function TabPill({ active, onClick, children }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      aria-current={active ? 'page' : undefined}
+      style={{
+        padding: '9px 18px',
+        borderRadius: 'var(--radius-full)',
+        fontFamily: 'Poppins, system-ui, sans-serif',
+        fontSize: 13,
+        fontWeight: 500,
+        cursor: 'pointer',
+        whiteSpace: 'nowrap',
+        flexShrink: 0,
+        transition: 'all 150ms var(--ease)',
+        border: '1px solid ' + (active || hover ? 'var(--accent)' : 'var(--border)'),
+        background: active ? 'var(--accent)' : 'var(--bg-elevated)',
+        color: active ? '#fff' : hover ? 'var(--text-primary)' : 'var(--text-secondary)',
+      }}
+    >
+      {children}
+    </button>
   );
 }
