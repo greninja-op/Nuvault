@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import {
+  AlertTriangle,
+  ArrowDownLeft,
   ArrowLeftRight,
+  ArrowUpRight,
   Banknote,
   Car,
   ChevronDown,
@@ -9,13 +12,14 @@ import {
   Circle,
   Heart,
   Music,
-  MoreVertical,
   Pencil,
   Plus,
   Search,
   ShoppingBag,
+  Tag,
   Trash2,
   UtensilsCrossed,
+  Wallet,
 } from 'lucide-react';
 import apiClient from '../api/client';
 import { useDisplayCurrency } from '../currency/CurrencyContext';
@@ -25,6 +29,7 @@ import TransactionsSkeleton from '../components/skeletons/TransactionsSkeleton';
 import Input from '../components/ui/Input';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
+import StatCard from '../components/ui/StatCard';
 
 const TYPES = ['income', 'expense'];
 
@@ -65,10 +70,10 @@ function categoryVisual(category, type) {
     return { Icon: Heart, color: '#ef4444' };
   if (c.includes('entertain') || c.includes('music') || c.includes('movie'))
     return { Icon: Music, color: '#f59e0b' };
+  if (!c) return { Icon: Tag, color: '#a1a1aa' };
   return { Icon: Circle, color: '#a1a1aa' };
 }
 
-/** Short "12 Jun" date. */
 function shortDate(value) {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return '';
@@ -89,7 +94,6 @@ export default function Transactions() {
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
-  // Always filter by the selected month (driven by the chevron navigator).
   const [filterEnabled] = useState(true);
 
   const [items, setItems] = useState([]);
@@ -103,7 +107,9 @@ export default function Transactions() {
   const [formError, setFormError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Presentation-only filtering state (no effect on data fetching).
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+
   const [search, setSearch] = useState('');
   const [activeFilter, setActiveFilter] = useState('all');
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
@@ -199,19 +205,23 @@ export default function Transactions() {
     }
   }
 
-  async function handleDelete(tx) {
-    if (typeof window !== 'undefined' && !window.confirm('Delete this transaction?')) return;
+  async function confirmDelete() {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
     try {
-      await apiClient.delete(`/transactions/${tx._id}`);
+      await apiClient.delete(`/transactions/${deleteTarget._id}`);
+      setDeleteTarget(null);
       await load();
     } catch (err) {
       setError(extractError(err, 'Unable to delete transaction'));
+    } finally {
+      setDeleting(false);
     }
   }
 
   const totalIncome = summary.income.reduce((s, x) => s + Number(x.total || 0), 0);
   const totalExpense = summary.expense.reduce((s, x) => s + Number(x.total || 0), 0);
-  const balance = totalIncome - totalExpense;
+  const net = totalIncome - totalExpense;
 
   function prevMonth() {
     setVisibleCount(PAGE_SIZE);
@@ -232,7 +242,14 @@ export default function Transactions() {
     }
   }
 
-  // Client-side filtering of the already-fetched month's transactions.
+  function clearFilters() {
+    setSearch('');
+    setActiveFilter('all');
+    setVisibleCount(PAGE_SIZE);
+  }
+
+  const filtersActive = activeFilter !== 'all' || search.trim() !== '';
+
   const filtered = items.filter((tx) => {
     if (activeFilter === 'income' && tx.type !== 'income') return false;
     if (activeFilter === 'expense' && tx.type !== 'expense') return false;
@@ -263,14 +280,15 @@ export default function Transactions() {
           alignItems: 'center',
           gap: 12,
           marginBottom: 24,
+          flexWrap: 'wrap',
         }}
       >
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.3px' }}>
             Transactions
           </h1>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
-            Track every rupee in and out
+          <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 4 }}>
+            Every rupee in and out, tracked in one place.
           </p>
         </div>
         <Button variant="primary" onClick={openCreate}>
@@ -279,17 +297,38 @@ export default function Transactions() {
         </Button>
       </div>
 
-      {/* Summary strip */}
+      {/* Summary cards */}
       <div
-        className="no-scrollbar"
-        style={{ display: 'flex', gap: 12, marginBottom: 20, overflowX: 'auto' }}
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+          gap: 16,
+          marginBottom: 24,
+        }}
       >
-        <SummaryChip label="Income" value={format(totalIncome)} color="var(--green)" />
-        <SummaryChip label="Expenses" value={format(totalExpense)} color="var(--red)" />
-        <SummaryChip
-          label="Balance"
-          value={format(balance)}
-          color={balance >= 0 ? 'var(--accent)' : 'var(--red)'}
+        <StatCard
+          label="This Month Income"
+          value={format(totalIncome)}
+          icon={ArrowDownLeft}
+          iconColor="var(--green)"
+          valueColor="var(--green)"
+          trendLabel={`${MONTHS[month - 1]} ${year}`}
+        />
+        <StatCard
+          label="This Month Expenses"
+          value={format(totalExpense)}
+          icon={ArrowUpRight}
+          iconColor="var(--red)"
+          valueColor="var(--red)"
+          trendLabel={`${MONTHS[month - 1]} ${year}`}
+        />
+        <StatCard
+          label="Net This Month"
+          value={`${net >= 0 ? '' : '-'}${format(Math.abs(net))}`}
+          icon={Wallet}
+          iconColor="var(--accent)"
+          valueColor={net >= 0 ? 'var(--text-primary)' : 'var(--red)'}
+          trendLabel={`${MONTHS[month - 1]} ${year}`}
         />
       </div>
 
@@ -319,51 +358,19 @@ export default function Transactions() {
         </div>
 
         {TYPE_FILTERS.map((f) => (
-          <FilterPill
-            key={f.id}
-            active={activeFilter === f.id}
-            onClick={() => {
-              setActiveFilter(f.id);
-              setVisibleCount(PAGE_SIZE);
-            }}
-          >
+          <FilterPill key={f.id} active={activeFilter === f.id} onClick={() => { setActiveFilter(f.id); setVisibleCount(PAGE_SIZE); }}>
             {f.label}
           </FilterPill>
         ))}
         {CATEGORY_FILTERS.map((c) => (
-          <FilterPill
-            key={c}
-            active={activeFilter === c}
-            onClick={() => {
-              setActiveFilter(c);
-              setVisibleCount(PAGE_SIZE);
-            }}
-          >
+          <FilterPill key={c} active={activeFilter === c} onClick={() => { setActiveFilter(c); setVisibleCount(PAGE_SIZE); }}>
             {c}
           </FilterPill>
         ))}
 
-        {/* Month navigator */}
-        <div
-          style={{
-            marginLeft: 'auto',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            flexShrink: 0,
-          }}
-        >
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
           <IconBtn icon={ChevronLeft} label="Previous month" onClick={prevMonth} />
-          <span
-            style={{
-              fontSize: 13,
-              fontWeight: 500,
-              color: 'var(--text-primary)',
-              whiteSpace: 'nowrap',
-              minWidth: 64,
-              textAlign: 'center',
-            }}
-          >
+          <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', whiteSpace: 'nowrap', minWidth: 64, textAlign: 'center' }}>
             {MONTHS[month - 1]} {year}
           </span>
           <IconBtn icon={ChevronRight} label="Next month" onClick={nextMonth} />
@@ -386,8 +393,21 @@ export default function Transactions() {
         </p>
       )}
 
-      {filtered.length === 0 ? (
-        <EmptyState onAdd={openCreate} />
+      {items.length === 0 ? (
+        <EmptyState
+          title="No transactions yet"
+          subtitle="Add your first transaction to start tracking."
+          actionLabel="Add Transaction"
+          onAction={openCreate}
+        />
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          title="No transactions match these filters"
+          subtitle="Try adjusting your filters."
+          actionLabel="Clear filters"
+          actionVariant="ghost"
+          onAction={clearFilters}
+        />
       ) : (
         <>
           {/* Desktop table */}
@@ -403,51 +423,53 @@ export default function Transactions() {
           >
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr style={{ background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border)' }}>
-                  <Th>Date</Th>
-                  <Th>Description</Th>
+                <tr style={{ borderBottom: '1px solid var(--border)' }}>
                   <Th>Category</Th>
+                  <Th>Description</Th>
+                  <Th>Date</Th>
                   <Th align="right">Amount</Th>
-                  <Th align="right">Actions</Th>
                 </tr>
               </thead>
               <tbody>
                 {shown.map((tx, idx) => {
-                  const { color } = categoryVisual(tx.category, tx.type);
+                  const { Icon, color } = categoryVisual(tx.category, tx.type);
                   const income = tx.type === 'income';
                   return (
                     <tr
                       key={tx._id}
                       className="tx-row"
-                      style={{
-                        borderBottom:
-                          idx === shown.length - 1 ? 'none' : '1px solid var(--border-subtle)',
-                      }}
+                      style={{ borderBottom: idx === shown.length - 1 ? 'none' : '1px solid var(--border-subtle)' }}
                     >
-                      <Td style={{ fontSize: 13, color: 'var(--text-muted)' }}>{shortDate(tx.date)}</Td>
-                      <Td style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>
-                        {tx.description || tx.category}
-                      </Td>
                       <Td>
-                        <CategoryChip category={tx.category} color={color} />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <CategoryIcon Icon={Icon} color={color} />
+                          <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>
+                            {tx.category}
+                          </span>
+                        </div>
                       </Td>
-                      <Td
-                        align="right"
-                        style={{
-                          fontSize: 14,
-                          fontWeight: 600,
-                          fontVariantNumeric: 'tabular-nums',
-                          color: income ? 'var(--green)' : 'var(--red)',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {income ? '+' : '-'}
-                        {format(tx.amount)}
+                      <Td style={{ fontSize: 14, color: 'var(--text-secondary)', maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {tx.description || '—'}
                       </Td>
+                      <Td style={{ fontSize: 13, color: 'var(--text-muted)' }}>{shortDate(tx.date)}</Td>
                       <Td align="right">
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4 }}>
-                          <IconBtn icon={Pencil} label="Edit" onClick={() => openEdit(tx)} />
-                          <IconBtn icon={Trash2} label="Delete" danger onClick={() => handleDelete(tx)} />
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
+                          <span className="tx-actions" style={{ display: 'inline-flex', gap: 4 }}>
+                            <IconBtn icon={Pencil} label="Edit" small onClick={() => openEdit(tx)} />
+                            <IconBtn icon={Trash2} label="Delete" small danger onClick={() => setDeleteTarget(tx)} />
+                          </span>
+                          <span
+                            style={{
+                              fontSize: 14,
+                              fontWeight: 600,
+                              fontVariantNumeric: 'tabular-nums',
+                              whiteSpace: 'nowrap',
+                              color: income ? 'var(--green)' : 'var(--red)',
+                            }}
+                          >
+                            {income ? '+' : '-'}
+                            {format(tx.amount)}
+                          </span>
                         </div>
                       </Td>
                     </tr>
@@ -458,7 +480,7 @@ export default function Transactions() {
           </div>
 
           {/* Mobile cards */}
-          <div className="md:hidden" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div className="md:hidden" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {shown.map((tx) => {
               const { Icon, color } = categoryVisual(tx.category, tx.type);
               const income = tx.type === 'income';
@@ -468,28 +490,14 @@ export default function Transactions() {
                   style={{
                     background: 'var(--bg-surface)',
                     border: '1px solid var(--border)',
-                    borderLeft: `3px solid ${income ? 'var(--green)' : 'var(--red)'}`,
+                    borderLeft: `4px solid ${color}`,
                     borderRadius: 'var(--radius-lg)',
                     padding: '14px 16px',
                     boxShadow: 'var(--shadow-sm)',
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <span
-                      style={{
-                        width: 36,
-                        height: 36,
-                        borderRadius: '50%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        background: `color-mix(in srgb, ${color} 12%, transparent)`,
-                        color,
-                        flexShrink: 0,
-                      }}
-                    >
-                      <Icon size={16} strokeWidth={1.75} />
-                    </span>
+                    <CategoryIcon Icon={Icon} color={color} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div
                         style={{
@@ -503,17 +511,14 @@ export default function Transactions() {
                       >
                         {tx.description || tx.category}
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
-                        <span style={{ fontSize: 11, fontWeight: 500, color }}>{tx.category}</span>
-                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                          {shortDate(tx.date)}
-                        </span>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                        {tx.category} · {shortDate(tx.date)}
                       </div>
                     </div>
                     <div
                       style={{
                         fontSize: 15,
-                        fontWeight: 700,
+                        fontWeight: 600,
                         fontVariantNumeric: 'tabular-nums',
                         whiteSpace: 'nowrap',
                         color: income ? 'var(--green)' : 'var(--red)',
@@ -522,52 +527,14 @@ export default function Transactions() {
                       {income ? '+' : '-'}
                       {format(tx.amount)}
                     </div>
-                    <IconBtn
-                      icon={MoreVertical}
-                      label="More"
-                      onClick={() => setMenuId(menuId === tx._id ? null : tx._id)}
-                    />
+                    <IconBtn icon={Pencil} label="Edit" small onClick={() => openEdit(tx)} />
+                    <IconBtn icon={Trash2} label="Delete" small danger onClick={() => setDeleteTarget(tx)} />
                   </div>
-                  {menuId === tx._id && (
-                    <div
-                      style={{
-                        display: 'flex',
-                        gap: 8,
-                        marginTop: 12,
-                        paddingTop: 12,
-                        borderTop: '1px solid var(--border-subtle)',
-                      }}
-                    >
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        fullWidth
-                        onClick={() => {
-                          setMenuId(null);
-                          openEdit(tx);
-                        }}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        fullWidth
-                        onClick={() => {
-                          setMenuId(null);
-                          handleDelete(tx);
-                        }}
-                      >
-                        Delete
-                      </Button>
-                    </div>
-                  )}
                 </div>
               );
             })}
           </div>
 
-          {/* Load more + count */}
           {filtered.length > shown.length && (
             <div style={{ textAlign: 'center', marginTop: 16 }}>
               <Button variant="ghost" onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}>
@@ -576,14 +543,7 @@ export default function Transactions() {
               </Button>
             </div>
           )}
-          <div
-            style={{
-              fontSize: 12,
-              color: 'var(--text-muted)',
-              textAlign: 'center',
-              marginTop: 12,
-            }}
-          >
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', marginTop: 12 }}>
             Showing {shown.length} of {filtered.length} transactions
           </div>
         </>
@@ -611,10 +571,13 @@ export default function Transactions() {
             </p>
           )}
 
-          {/* Type toggle */}
+          {/* Income / Expense pill toggle */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             {TYPES.map((t) => {
               const active = form.type === t;
+              const isIncome = t === 'income';
+              const activeBg = isIncome ? 'var(--green-muted)' : 'var(--red-muted)';
+              const activeColor = isIncome ? 'var(--green)' : 'var(--red)';
               return (
                 <button
                   key={t}
@@ -625,12 +588,12 @@ export default function Transactions() {
                     borderRadius: 'var(--radius-full)',
                     padding: '10px 0',
                     fontSize: 14,
-                    fontWeight: 500,
+                    fontWeight: 600,
                     fontFamily: 'Poppins',
                     cursor: 'pointer',
-                    border: '1px solid ' + (active ? 'var(--accent)' : 'var(--border)'),
-                    background: active ? 'var(--accent)' : 'var(--bg-elevated)',
-                    color: active ? '#fff' : 'var(--text-secondary)',
+                    border: '1px solid ' + (active ? activeColor : 'var(--border)'),
+                    background: active ? activeBg : 'var(--bg-elevated)',
+                    color: active ? activeColor : 'var(--text-secondary)',
                     transition: 'all 150ms var(--ease)',
                   }}
                 >
@@ -682,41 +645,48 @@ export default function Transactions() {
           </div>
         </form>
       </Modal>
+
+      {/* Delete confirmation */}
+      <Modal open={Boolean(deleteTarget)} onClose={() => setDeleteTarget(null)} title="" maxWidth={360}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 6 }}>
+          <AlertTriangle size={40} strokeWidth={1.75} color="var(--red)" />
+          <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginTop: 6 }}>
+            Delete this transaction?
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>This action cannot be undone.</div>
+          <div style={{ display: 'flex', gap: 10, marginTop: 16, width: '100%' }}>
+            <Button variant="secondary" fullWidth onClick={() => setDeleteTarget(null)}>
+              Cancel
+            </Button>
+            <Button variant="danger" fullWidth loading={deleting} onClick={confirmDelete}>
+              Delete
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
 
 /* ── Presentational helpers ────────────────────────────────────────────────*/
 
-function SummaryChip({ label, value, color }) {
+function CategoryIcon({ Icon, color }) {
   return (
-    <div
+    <span
       style={{
-        background: 'var(--bg-surface)',
-        border: '1px solid var(--border)',
-        borderRadius: 'var(--radius-lg)',
-        padding: '14px 18px',
-        flex: 1,
+        width: 32,
+        height: 32,
+        borderRadius: '50%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: `color-mix(in srgb, ${color} 12%, transparent)`,
+        color,
         flexShrink: 0,
-        minWidth: 140,
-        boxShadow: 'var(--shadow-sm)',
       }}
     >
-      <div
-        style={{
-          fontSize: 11,
-          fontWeight: 500,
-          textTransform: 'uppercase',
-          letterSpacing: '0.06em',
-          color: 'var(--text-muted)',
-        }}
-      >
-        {label}
-      </div>
-      <div style={{ fontSize: 20, fontWeight: 700, fontVariantNumeric: 'tabular-nums', color, marginTop: 4 }}>
-        {value}
-      </div>
-    </div>
+      <Icon size={16} strokeWidth={1.75} />
+    </span>
   );
 }
 
@@ -738,8 +708,8 @@ function FilterPill({ active, onClick, children }) {
         whiteSpace: 'nowrap',
         flexShrink: 0,
         transition: 'all 150ms var(--ease)',
-        border: '1px solid ' + (active ? 'var(--accent)' : 'var(--border)'),
-        background: active ? 'var(--accent)' : hover ? 'var(--bg-hover)' : 'var(--bg-surface)',
+        border: '1px solid ' + (active ? 'var(--accent)' : hover ? 'var(--accent)' : 'var(--border)'),
+        background: active ? 'var(--accent)' : 'var(--bg-elevated)',
         color: active ? '#fff' : hover ? 'var(--text-primary)' : 'var(--text-secondary)',
       }}
     >
@@ -748,8 +718,9 @@ function FilterPill({ active, onClick, children }) {
   );
 }
 
-function IconBtn({ icon: Icon, onClick, danger, label }) {
+function IconBtn({ icon: Icon, onClick, danger, label, small }) {
   const [hover, setHover] = useState(false);
+  const size = small ? 28 : 32;
   const color = danger
     ? hover
       ? 'var(--red)'
@@ -765,8 +736,8 @@ function IconBtn({ icon: Icon, onClick, danger, label }) {
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
-        width: 32,
-        height: 32,
+        width: size,
+        height: size,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -779,26 +750,8 @@ function IconBtn({ icon: Icon, onClick, danger, label }) {
         transition: 'all 150ms var(--ease)',
       }}
     >
-      <Icon size={16} strokeWidth={1.75} />
+      <Icon size={small ? 15 : 16} strokeWidth={1.75} />
     </button>
-  );
-}
-
-function CategoryChip({ category, color }) {
-  return (
-    <span
-      style={{
-        background: `color-mix(in srgb, ${color} 12%, transparent)`,
-        color,
-        borderRadius: 'var(--radius-full)',
-        padding: '3px 10px',
-        fontSize: 12,
-        fontWeight: 500,
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {category}
-    </span>
   );
 }
 
@@ -809,7 +762,7 @@ function Th({ children, align = 'left' }) {
         fontSize: 11,
         fontWeight: 500,
         textTransform: 'uppercase',
-        letterSpacing: '0.06em',
+        letterSpacing: '0.05em',
         color: 'var(--text-muted)',
         padding: '12px 16px',
         textAlign: align,
@@ -824,7 +777,7 @@ function Td({ children, align = 'left', style }) {
   return <td style={{ padding: '14px 16px', textAlign: align, ...style }}>{children}</td>;
 }
 
-function EmptyState({ onAdd }) {
+function EmptyState({ title, subtitle, actionLabel, actionVariant = 'primary', onAction }) {
   return (
     <div
       style={{
@@ -840,16 +793,12 @@ function EmptyState({ onAdd }) {
       }}
     >
       <ArrowLeftRight size={48} strokeWidth={1.5} color="var(--text-muted)" />
-      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-secondary)', marginTop: 12 }}>
-        No transactions found
-      </div>
-      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
-        Try adjusting your filters or add a new transaction
-      </div>
+      <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginTop: 12 }}>{title}</div>
+      <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 6 }}>{subtitle}</div>
       <div style={{ marginTop: 16 }}>
-        <Button variant="ghost" onClick={onAdd}>
-          <Plus size={16} strokeWidth={2} />
-          Add Transaction
+        <Button variant={actionVariant} onClick={onAction}>
+          {actionVariant === 'primary' && <Plus size={16} strokeWidth={2} />}
+          {actionLabel}
         </Button>
       </div>
     </div>

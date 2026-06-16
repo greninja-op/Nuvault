@@ -221,3 +221,13 @@ body {
 .tx-row:hover {
   background: var(--bg-hover);
 }
+
+/* ── Transaction row hover actions (desktop) ───────────────────────────────*/
+.tx-actions {
+  opacity: 0;
+  transition: opacity 150ms var(--ease);
+}
+.tx-row:hover .tx-actions,
+.tx-row:focus-within .tx-actions {
+  opacity: 1;
+}
